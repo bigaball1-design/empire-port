@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Empire Basin 2.2</title>
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/fullcalendar@6.1.8/index.global.min.js"></script>
+    <style>
+        :root { --bg: #070707; --card: #111; --text: #eee; --dim: #888; --up: #00ff88; --down: #ff3344; --accent: #3498db; --orange: #ffa500; --border: #222; }
+        body { font-family: 'Kanit', sans-serif; background: var(--bg); margin: 0; color: var(--text); }
+        .nav-bar { display: flex; background: #000; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100; }
+        .nav-item { padding: 15px 25px; cursor: pointer; color: var(--dim); border-bottom: 3px solid transparent; }
+        .nav-item.active { border-color: var(--up); color: var(--up); background: rgba(0,255,136,0.05); }
+        .container { padding: 25px; }
+        .tab-content { display: none; } .tab-content.active { display: block; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
+        .basin-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; cursor: pointer; }
+        .basin-card h2 { font-size: 28px; color: var(--up); margin: 0; font-family: 'JetBrains Mono'; }
+        .status-tag { font-size: 13px; padding: 3px 8px; border-radius: 4px; display: inline-block; margin: 10px 0; border: 1px solid; }
+        .st-up { color: var(--orange); border-color: var(--orange); }
+        .st-done { color: var(--up); border-color: var(--up); }
+        .bar-bg { height: 8px; background: #222; border-radius: 4px; overflow: hidden; margin-top: 5px; }
+        .bar-fill { height: 100%; background: var(--up); transition: 1s; }
+        .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); z-index: 1000; padding: 20px; overflow-y: auto; }
+        .modal-content { background: var(--card); max-width: 800px; margin: 20px auto; padding: 30px; border-radius: 12px; border: 1px solid var(--border); }
+        .history-item { border-left: 2px solid var(--border); padding-left: 15px; margin-bottom: 20px; }
+        #calendar { background: #000; padding: 15px; border-radius: 10px; }
+    </style>
+</head>
+<body>
+    <div class="nav-bar">
+        <div class="nav-item active" onclick="switchTab('main', this)">Dashboard</div>
+        <div class="nav-item" onclick="switchTab('progress', this)">Progress</div>
+        <div class="nav-item" onclick="switchTab('cal', this)">Calendar</div>
+    </div>
+    <div class="container">
+        <div id="tab-main" class="tab-content active"><div id="main-grid" class="grid"></div></div>
+        <div id="tab-progress" class="tab-content"><h2>Progress Tracker</h2><div id="p-list"></div></div>
+        <div id="tab-cal" class="tab-content"><div id="calendar"></div></div>
+    </div>
+    <div id="modal" class="modal" onclick="this.style.display='none'"><div class="modal-content" onclick="event.stopPropagation()" id="m-body"></div></div>
+
+<script>
+    const LOG_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT5hALcSBPp06GcYUqubUzlQM6_spndAbjd4nuhA9ekKFGkA8gldNXj1frx3gjn-6Tg0eS-HuAI9bUw/pub?gid=0&single=true&output=csv';
+    const PROF_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT5hALcSBPp06GcYUqubUzlQM6_spndAbjd4nuhA9ekKFGkA8gldNXj1frx3gjn-6Tg0eS-HuAI9bUw/pub?gid=1235957743&single=true&output=csv';
+    const STEPS = ["Inception", "Progress", "Interim", "Progress 2", "Draft Final", "Final"];
+    let db = { profiles: {}, logs: [] };
+
+    function formatDate(dStr) {
+        if(!dStr) return null;
+        if(dStr.includes('-')) return dStr; // YYYY-MM-DD
+        const parts = dStr.split('/');
+        if(parts.length === 3) return `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`;
+        return null;
+    }
+
+    async function load() {
+        try {
+            const [pRes, lRes] = await Promise.all([fetch(PROF_URL), fetch(LOG_URL)]);
+            const pTxt = await pRes.text();
+            pTxt.split('\n').forEach(r => {
+                const c = r.split(',').map(s => s.trim());
+                if(c[0] && c[0] !== 'nick_name') db.profiles[c[0]] = { fullName: c[1], company: c[2], staff: c[3], link: c[4] };
+            });
+            const lTxt = await lRes.text();
+            db.logs = lTxt.split('\n').map(r => r.split(',').map(s => s.trim())).filter(c => c[0] && c[0] !== 'ลุ่มน้ำ');
+            render();
+        } catch(e) { console.error("Load Failed", e); alert("กรุณาเปิด Extension Allow CORS หรือใช้งานผ่าน GitHub"); }
+    }
+
+    function render() {
+        const grid = document.getElementById('main-grid'); grid.innerHTML = '';
+        const now = new Date();
+        const basins = [...new Set(db.logs.map(l => l[0]))];
+        
+        const sorted = basins.map(name => {
+            const logs = db.logs.filter(l => l[0] === name).map(l => ({...l, dt: new Date(formatDate(l[2]) + 'T' + (l[3].split('-')[0]||'09:00')) }));
+            const next = logs.sort((a,b) => a.dt - b.dt).find(l => l.dt > now) || logs[logs.length-1];
+            return { name, next };
+        }).sort((a,b) => a.next.dt - b.next.dt);
+
+        sorted.forEach(b => {
+            const isDone = b.next.dt <= now;
+            grid.innerHTML += `<div class="basin-card" onclick="openDetails('${b.name}')">
+                <h2>${b.name}</h2>
+                <div class="status-tag ${isDone?'st-done':'st-up'}">
+                    ${isDone ? '● ประชุมเสร็จสิ้น' : '● นัดหมาย: ' + b.next[2]}
+                </div>
+            </div>`;
+        });
+
+        const plist = document.getElementById('p-list'); plist.innerHTML = '';
+        Object.keys(db.profiles).forEach(name => {
+            const logs = db.logs.filter(l => l[0] === name);
+            let max = 0; logs.forEach(l => { const i = STEPS.indexOf(l[1]); if(i >= max) max = i + 1; });
+            plist.innerHTML += `<div style="margin-bottom:15px;"><div style="color:var(--up)">${name} (Step ${max}/6)</div><div class="bar-bg"><div class="bar-fill" style="width:${(max/6)*100}%"></div></div></div>`;
+        });
+    }
+
+    function openDetails(name) {
+        const p = db.profiles[name] || {};
+        const logs = db.logs.filter(l => l[0] === name).reverse();
+        let html = `<h1>${name}</h1><p>${p.fullName || ''}</p><p style="color:var(--accent)">บริษัท: ${p.company || '-'}</p><hr style="border-color:#222">`;
+        logs.forEach(l => {
+            const feeRaw = l[6] ? l[6].replace(/[^0-9.]/g,'') : '';
+            const fee = feeRaw === '' ? null : parseFloat(feeRaw);
+            let txt = fee === 0 ? "ไม่มีเบี้ยประชุม" : (fee === null ? "รอรับเบี้ย" : "฿" + (fee/2).toLocaleString() + " / คน (ประมาณ)");
+            html += `<div class="history-item"><b>${l[1]}</b> (${l[2]})<br><span style="color:var(--orange)">${txt}</span></div>`;
+        });
+        document.getElementById('m-body').innerHTML = html;
+        document.getElementById('modal').style.display = 'block';
+    }
+
+    function switchTab(t, el) {
+        document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+        document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+        document.getElementById('tab-'+t).classList.add('active'); el.classList.add('active');
+        if(t === 'cal') initCal();
+    }
+
+    function initCal() {
+        const ev = db.logs.map(l => ({ title: l[0], start: formatDate(l[2]), color: new Date(formatDate(l[2])) < new Date() ? '#333' : '#ffa500' }));
+        new FullCalendar.Calendar(document.getElementById('calendar'), { initialView: 'dayGridMonth', events: ev, locale: 'th' }).render();
+    }
+    load();
+</script>
+</body>
+</html>
