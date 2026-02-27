@@ -104,12 +104,49 @@
     function initChart(current, target) {
         const ctx = document.getElementById('growthChart').getContext('2d');
         const labels = ['Now', 'W4', 'W8', 'W12', 'W16', 'W20', 'Target'];
+        
+        // เส้นเป้าหมาย (คำนวณจากเป้าที่อยากไปถึง)
         const step = (target - current) / 6;
-        const data = labels.map((_, i) => (current + (step * i)).toFixed(0));
+        const targetPath = labels.map((_, i) => (current + (step * i)).toFixed(2));
+        
+        // เส้นมูลค่าปัจจุบัน (แสดงเป็นจุดเริ่มต้น)
+        const currentStatus = labels.map((_, i) => i === 0 ? current : null);
+
         if (myChart) myChart.destroy();
-        myChart = new Chart(ctx, { type: 'line', data: { labels, datasets: [{ data, borderColor: '#00ff88', backgroundColor: 'rgba(0, 255, 136, 0.1)', borderWidth: 2, fill: true, tension: 0.4 }] }, options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: '#222' }, ticks: { color: '#666', font: { size: 9 } } }, x: { grid: { display: false }, ticks: { color: '#666', font: { size: 9 } } } } } });
+        myChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        label: 'Target Path',
+                        data: targetPath,
+                        borderColor: '#444',
+                        borderDash: [5, 5],
+                        fill: false
+                    },
+                    {
+                        label: 'Current Value',
+                        data: currentStatus,
+                        borderColor: '#00ff88',
+                        backgroundColor: '#00ff88',
+                        pointRadius: 6,
+                        showLine: false
+                    }
+                ]
+            },
+            options: {
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: { 
+                    y: { grid: { color: '#222' }, ticks: { color: '#666' } },
+                    x: { grid: { display: false }, ticks: { color: '#666' } }
+                }
+            }
+        });
     }
-    update(); setInterval(update, 60000);
+    update(); setInterval(update, 600000);
 </script>
 </body>
 </html>
+
