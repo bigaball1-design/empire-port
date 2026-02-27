@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Port Empire 3.0 | Terminal</title>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg: #070707; --card: #111; --text: #eee; --dim: #666;
+            --up: #00ff88; --down: #ff3344; --accent: #222;
+        }
+        body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; margin: 0; padding: 25px; }
+        header { border-bottom: 1px solid var(--accent); padding-bottom: 15px; margin-bottom: 25px; display: flex; justify-content: space-between; align-items: center; }
+        h1 { font-family: 'JetBrains Mono'; font-size: 1.6rem; color: var(--up); margin: 0; }
+        
+        .summary-bar { background: var(--card); border: 1px solid var(--accent); padding: 25px; margin-bottom: 25px; display: flex; gap: 40px; border-radius: 8px; }
+        .summary-item span { display: block; font-size: 0.7rem; color: var(--dim); margin-bottom: 5px; }
+        .summary-item b { font-family: 'JetBrains Mono'; font-size: 1.5rem; }
+
+        .list-header, .stock-row { display: grid; grid-template-columns: 1.2fr 1fr 1fr 1fr 1.2fr 1.5fr 1fr; gap: 10px; align-items: center; }
+        .list-header { padding: 10px 20px; color: var(--dim); font-size: 0.65rem; text-transform: uppercase; font-weight: 700; }
+        .stock-row { background: var(--card); border: 1px solid var(--accent); margin-bottom: 8px; padding: 15px 20px; border-radius: 6px; }
+
+        .ticker-info b { font-family: 'JetBrains Mono'; font-size: 1.1rem; color: var(--up); }
+        .ticker-info i { font-size: 0.7rem; color: var(--dim); display: block; font-style: normal; }
+        .p-box b { display: block; font-size: 1rem; font-family: 'JetBrains Mono'; }
+        .p-box i { font-size: 0.75rem; color: var(--dim); font-style: normal; }
+
+        .bar-bg { height: 6px; background: #222; border-radius: 3px; margin-top: 8px; overflow: hidden; }
+        .bar-fill { height: 100%; background: linear-gradient(90deg, #111, var(--up)); width: 0%; transition: 1s ease-out; }
+        .up { color: var(--up) !important; } .down { color: var(--down) !important; }
+        
+        .chart-container { background: var(--card); border: 1px solid var(--accent); padding: 25px; border-radius: 8px; margin-top: 30px; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>PORT_EMPIRE_3.0</h1>
+    <div id="sync-info" style="font-size: 0.7rem; color: var(--dim);">SYSTEM_READY...</div>
+</header>
+
+<div class="summary-bar">
+    <div class="summary-item"><span>NET_WORTH_USD</span><b id="total-usd">$0.00</b></div>
+    <div class="summary-item"><span>NET_WORTH_THB</span><b id="total-thb">฿0.00</b></div>
+    <div class="summary-item"><span>TOTAL_UNREALIZED_P/L</span><b id="total-pl">0.00%</b></div>
+    <div class="summary-item"><span>LIVE_FX_RATE</span><b id="fx-rate">0.00</b></div>
+</div>
+
+<div class="list-header">
+    <div>Asset/Industry</div>
+    <div>Market Price</div>
+    <div>Market Value</div>
+    <div>Average Cost</div>
+    <div>Profit / Loss</div>
+    <div>Target Progress</div>
+    <div>7D Trend</div>
+</div>
+
+<div id="stock-list"></div>
+
+<div class="chart-container">
+    <div style="font-family:'JetBrains Mono'; font-size: 0.8rem; margin-bottom: 20px; color: var(--dim);">// PORTFOLIO_WEEKLY_GROWTH_PROJECTION</div>
+    <canvas id="growthChart" height="80"></canvas>
+</div>
+
+<script>
+    const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTQxEdO_NiXSTfy_96k0yL4rm-i9Ap3PwsIAzm4D3UlUVuntBqanNjChBCfB-ylKgWvYYI6kxIThfk-/pub?gid=1701656193&single=true&output=csv';
+    let LIVE_FX = 36.00;
+    let myChart = null;
+
+    function clean(val) {
+        if (!val || val.toString().trim() === "" || val === "#N/A") return 0;
+        let cleaned = val.toString().replace(/[^0-9.-]+/g, "");
+        return parseFloat(cleaned) || 0;
+    }
+
+    async function update() {
+        try {
+            const fxRes = await fetch('https://open.er-api.com/v6/latest/USD');
+            const fxData = await fxRes.json();
+            LIVE_FX = fxData.rates.THB;
+
+            const res = await fetch(CSV_URL);
+            const text = await res.text();
+            const rows = text.split('\n').slice(1).map(r => r.split(',')).filter(r => r[0] && r[0].trim() !== "");
+            render(rows);
+        } catch (e) { console.error(e); }
+    }
+
+    function render(rows) {
+        const container = document.getElementById('stock-list');
+        container.innerHTML = '';
+        let tMkt = 0, tCost = 0, tTarget = 0;
+
+        rows.forEach(cols => {
+            const ticker = cols[0].trim(), industry = cols[1];
+            const price = clean(cols[2]), cost = clean(cols[4]), shares = clean(cols[5]), target = clean(cols[7]);
+            const mktVal = price * shares, costBasis = cost * shares;
+            const plUsd = mktVal - costBasis, plPct = costBasis > 0 ? (plUsd / costBasis) * 100 : 0;
+            const progress = target > 0 ? Math.min((price / target) * 100, 100) : 0;
+
+            tMkt += mktVal; tCost += costBasis; tTarget += (target * shares);
+
+            container.innerHTML += `
+                <div class="stock-row">
+                    <div class="ticker-info"><b>${ticker}</b><i>${industry}</i></div>
+                    <div class="p-box"><b>$${price.toFixed(2)}</b><i>฿${(price*LIVE_FX).toFixed(2)}</i></div>
+                    <div class="p-box"><b class="up">$${mktVal.toFixed(2)}</b><i>฿${(mktVal*LIVE_FX).toFixed(0)}</i></div>
+                    <div class="p-box"><b>$${cost.toFixed(2)}</b></div>
+                    <div class="p-box"><b class="${plUsd>=0?'up':'down'}">${plUsd>=0?'+':''}$${plUsd.toFixed(2)}</b><i class="${plUsd>=0?'up':'down'}">${plPct.toFixed(2)}%</i></div>
+                    <div>
+                        <div style="display:flex; justify-content:space-between; font-size:0.6rem; color:var(--dim)"><span>TGT $${target.toFixed(2)}</span><span>${progress.toFixed(1)}%</span></div>
+                        <div class="bar-bg"><div class="bar-fill" style="width:${progress}%"></div></div>
+                    </div>
+                    <img src="https://helpers.tradingview.com/sparkline/${ticker}/?height=40&width=100&interval=D" style="filter: invert(1) hue-rotate(90deg) brightness(1.2);">
+                </div>`;
+        });
+
+        const totalPlPct = tCost > 0 ? ((tMkt - tCost) / tCost) * 100 : 0;
+        document.getElementById('total-usd').innerText = `$${tMkt.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+        document.getElementById('total-thb').innerText = `฿${(tMkt*LIVE_FX).toLocaleString(undefined, {maximumFractionDigits: 0})}`;
+        document.getElementById('total-pl').innerText = `${totalPlPct>=0?'+':''}${totalPlPct.toFixed(2)}%`;
+        document.getElementById('total-pl').className = totalPlPct >= 0 ? 'up' : 'down';
+        document.getElementById('fx-rate').innerText = LIVE_FX.toFixed(2);
+        document.getElementById('sync-info').innerText = `LAST_SYNC: ${new Date().toLocaleTimeString()}`;
+        
+        initChart(tMkt, tTarget);
+    }
+
+    function initChart(current, target) {
+        if (isNaN(current) || isNaN(target) || target === 0) return;
+        const ctx = document.getElementById('growthChart').getContext('2d');
+        const labels = ['Now', 'W4', 'W8', 'W12', 'W16', 'W20', 'Target'];
+        const step = (target - current) / 6;
+        const dataPoints = labels.map((_, i) => (current + (step * i)).toFixed(2));
+
+        if (myChart) myChart.destroy();
+        myChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: dataPoints,
+                    borderColor: '#00ff88',
+                    backgroundColor: 'rgba(0, 255, 136, 0.1)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.4
+                }]
+            },
+            options: {
+                plugins: { legend: { display: false } },
+                scales: { 
+                    y: { grid: { color: '#222' }, ticks: { color: '#666', font: { family: 'JetBrains Mono' } } },
+                    x: { grid: { display: false }, ticks: { color: '#666' } }
+                }
+            }
+        });
+    }
+
+    update();
+    setInterval(update, 60000);
+</script>
+</body>
+</html>
