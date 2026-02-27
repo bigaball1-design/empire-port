@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Port Empire 3.0</title>
+    <title>Empire 3.0 | Terminal</title>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
@@ -11,35 +11,50 @@
         body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; margin: 0; padding: 15px; }
         header { border-bottom: 1px solid var(--accent); padding-bottom: 10px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
         h1 { font-family: 'JetBrains Mono'; font-size: 1.2rem; color: var(--up); margin: 0; }
+        
+        /* Summary Dashboard */
         .summary-bar { background: var(--card); border: 1px solid var(--accent); padding: 15px; margin-bottom: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 15px; border-radius: 8px; }
         .summary-item span { display: block; font-size: 0.6rem; color: var(--dim); margin-bottom: 2px; text-transform: uppercase; }
         .summary-item b { font-family: 'JetBrains Mono'; font-size: 1.1rem; }
+
+        /* List Layout */
         .list-header, .stock-row { display: grid; grid-template-columns: 1.2fr 1fr 1.2fr 1fr 1fr; gap: 8px; align-items: center; }
         .list-header { padding: 0 10px 10px; color: var(--dim); font-size: 0.55rem; text-transform: uppercase; font-weight: 700; }
         .stock-row { background: var(--card); border: 1px solid var(--accent); margin-bottom: 8px; padding: 12px 10px; border-radius: 6px; font-size: 0.85rem; }
+        
         .ticker-info b { font-family: 'JetBrains Mono'; font-size: 1rem; color: var(--up); display: block; }
         .ticker-info i { font-size: 0.6rem; color: var(--dim); display: block; font-style: normal; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        
         .p-box b { display: block; font-size: 0.9rem; font-family: 'JetBrains Mono'; }
         .p-box i { font-size: 0.65rem; color: var(--dim); font-style: normal; display: block; }
+
         .bar-bg { height: 4px; background: #222; border-radius: 2px; margin-top: 5px; overflow: hidden; }
-        .bar-fill { height: 100%; background: var(--up); width: 0%; transition: 1s; }
+        .bar-fill { height: 100%; background: var(--up); width: 0%; transition: 1s ease-out; }
+        
         .up { color: var(--up) !important; } .down { color: var(--down) !important; }
-        .chart-container { background: var(--card); border: 1px solid var(--accent); padding: 15px; border-radius: 8px; margin-top: 20px; }
-        @media (max-width: 600px) { .list-header { display: none; } .stock-row { grid-template-columns: 1fr 1fr; gap: 15px; } .chart-container { height: 250px; } }
+        .chart-container { background: var(--card); border: 1px solid var(--accent); padding: 15px; border-radius: 8px; margin-top: 20px; min-height: 200px; }
+
+        @media (max-width: 600px) { 
+            .list-header { display: none; } 
+            .stock-row { grid-template-columns: 1fr 1fr; gap: 15px; } 
+        }
     </style>
 </head>
 <body>
-    <header><h1>PORT_EMPIRE_3.0</h1><div id="sync-info" style="font-size: 0.6rem; color: var(--dim);">SYSTEM_READY...</div></header>
+    <header><h1>PORT_EMPIRE_3.0</h1><div id="sync-info" style="font-size: 0.6rem; color: var(--dim);">READY_FOR_DATA...</div></header>
+    
     <div class="summary-bar">
         <div class="summary-item"><span>Net Worth (USD)</span><b id="total-usd">$0.00</b></div>
         <div class="summary-item"><span>Net Worth (THB)</span><b id="total-thb">฿0</b></div>
-        <div class="summary-item"><span>Profit/Loss (%)</span><b id="total-pl">0.00%</b></div>
-        <div class="summary-item"><span>USD/THB Rate</span><b id="fx-rate">0.00</b></div>
+        <div class="summary-item"><span>Unrealized P/L</span><b id="total-pl">0.00%</b></div>
+        <div class="summary-item"><span>USD/THB (Live)</span><b id="fx-rate">0.00</b></div>
     </div>
-    <div class="list-header"><div>Asset</div><div>Price</div><div>Value</div><div>P/L</div><div>Target</div></div>
+
+    <div class="list-header"><div>Asset</div><div>Mkt Price</div><div>Value</div><div>P/L</div><div>Target</div></div>
     <div id="stock-list"></div>
+
     <div class="chart-container">
-        <div style="font-family:'JetBrains Mono'; font-size: 0.7rem; margin-bottom: 10px; color: var(--dim);">// WEEKLY_GROWTH_PROJECTION</div>
+        <div style="font-family:'JetBrains Mono'; font-size: 0.7rem; margin-bottom: 15px; color: var(--dim);">// PORTFOLIO_GROWTH_PROJECTION</div>
         <canvas id="growthChart"></canvas>
     </div>
 
@@ -60,7 +75,10 @@
             const text = await fetch(CSV_URL).then(r => r.text());
             const rows = text.split('\n').slice(1).map(r => r.split(',')).filter(r => r[0] && clean(r[5]) > 0);
             render(rows);
-        } catch (e) { console.error(e); }
+        } catch (e) { 
+            console.error(e); 
+            document.getElementById('sync-info').innerText = "SYNC_ERROR";
+        }
     }
 
     function render(rows) {
@@ -105,11 +123,8 @@
         const ctx = document.getElementById('growthChart').getContext('2d');
         const labels = ['Now', 'W4', 'W8', 'W12', 'W16', 'W20', 'Target'];
         
-        // เส้นเป้าหมาย (คำนวณจากเป้าที่อยากไปถึง)
         const step = (target - current) / 6;
         const targetPath = labels.map((_, i) => (current + (step * i)).toFixed(2));
-        
-        // เส้นมูลค่าปัจจุบัน (แสดงเป็นจุดเริ่มต้น)
         const currentStatus = labels.map((_, i) => i === 0 ? current : null);
 
         if (myChart) myChart.destroy();
@@ -121,8 +136,10 @@
                     {
                         label: 'Target Path',
                         data: targetPath,
-                        borderColor: '#444',
+                        borderColor: '#333',
                         borderDash: [5, 5],
+                        borderWidth: 1,
+                        pointRadius: 0,
                         fill: false
                     },
                     {
@@ -131,6 +148,7 @@
                         borderColor: '#00ff88',
                         backgroundColor: '#00ff88',
                         pointRadius: 6,
+                        pointHoverRadius: 8,
                         showLine: false
                     }
                 ]
@@ -139,14 +157,22 @@
                 maintainAspectRatio: false,
                 plugins: { legend: { display: false } },
                 scales: { 
-                    y: { grid: { color: '#222' }, ticks: { color: '#666' } },
-                    x: { grid: { display: false }, ticks: { color: '#666' } }
+                    y: { 
+                        grid: { color: '#1a1a1a' }, 
+                        ticks: { color: '#666', font: { family: 'JetBrains Mono', size: 10 } }
+                    },
+                    x: { 
+                        grid: { display: false }, 
+                        ticks: { color: '#666', font: { size: 10 } }
+                    }
                 }
             }
         });
     }
-    update(); setInterval(update, 600000);
+
+    update(); 
+    // ปรับเป็น 1 นาที เพื่อการเชื่อมต่อที่สดใหม่กว่า
+    setInterval(update, 60000);
 </script>
 </body>
 </html>
-
