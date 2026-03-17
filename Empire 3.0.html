@@ -15,7 +15,7 @@
         
         @keyframes pulse-border {
             0% { border-color: var(--accent); box-shadow: 0 0 0px rgba(255,171,64,0); }
-            50% { border-color: var(--warn); box-shadow: 0 0 20px rgba(255,171,64,0.4); }
+            50% { border-color: var(--warn); box-shadow: 0 0 15px rgba(255,171,64,0.3); }
             100% { border-color: var(--accent); box-shadow: 0 0 0px rgba(255,171,64,0); }
         }
 
@@ -35,23 +35,19 @@
         .charts-wrapper { display: grid; grid-template-columns: 1fr 1.5fr; gap: 25px; margin-bottom: 30px; }
         .chart-box { background: var(--card); border: 1px solid var(--accent); padding: 25px; border-radius: 12px; height: 380px; }
         
-        /* Portfolio List - BIGGER TEXT */
-        .list-header, .stock-row { display: grid; grid-template-columns: 1.5fr 0.8fr 0.8fr 1fr 1.2fr 1.2fr 1.2fr; gap: 15px; align-items: center; }
-        .list-header { padding: 0 20px 15px; color: var(--dim); font-size: 0.75rem; text-transform: uppercase; font-weight: 800; }
-        .stock-row { background: var(--card); border: 1px solid var(--accent); margin-bottom: 12px; padding: 22px 20px; border-radius: 10px; transition: 0.2s; }
-        .stock-row:hover { background: #181818; }
+        .section-label { font-family: 'JetBrains Mono'; font-size: 0.9rem; color: var(--up); margin: 20px 0 10px; opacity: 0.8; }
+        .list-header, .stock-row { display: grid; grid-template-columns: 1.5fr 0.8fr 0.8fr 1fr 1.2fr 1.5fr 1.2fr; gap: 15px; align-items: center; }
+        .list-header { padding: 0 20px 10px; color: var(--dim); font-size: 0.7rem; text-transform: uppercase; font-weight: 800; }
+        .stock-row { background: var(--card); border: 1px solid var(--accent); margin-bottom: 10px; padding: 18px 20px; border-radius: 8px; }
         
-        /* Watchlist Grid */
         .watch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
         .watch-card { background: var(--card); border: 1px solid var(--accent); padding: 25px; border-radius: 12px; transition: 0.3s; }
-        .watch-card.alert-pulse { animation: pulse-border 2s infinite; border-width: 2px; }
-        .watch-card .ticker { font-family: 'JetBrains Mono'; font-size: 1.8rem; font-weight: 700; color: #fff; }
+        .watch-card.alert-pulse { animation: pulse-border 2s infinite; }
         
         .tv-btn { display: block; width: 100%; text-align: center; background: var(--tv-blue); color: #fff; text-decoration: none; padding: 12px 0; border-radius: 8px; margin-top: 20px; font-size: 0.85rem; font-weight: 700; font-family: 'JetBrains Mono'; }
-        .up { color: var(--up) !important; font-weight: 700; } .down { color: var(--down) !important; font-weight: 700; }
-        .val-big { font-family: 'JetBrains Mono'; font-size: 1.2rem; font-weight: 700; }
-
-        @media (max-width: 1024px) { .charts-wrapper { grid-template-columns: 1fr; } .list-header { display: none; } .stock-row { grid-template-columns: 1.5fr 1fr; gap: 20px; } }
+        .up { color: var(--up) !important; } .down { color: var(--down) !important; }
+        .bar-bg { height: 6px; background: #222; border-radius: 3px; margin-top: 8px; overflow: hidden; }
+        .bar-fill { height: 100%; background: var(--up); width: 0%; transition: 1.2s; }
     </style>
 </head>
 <body>
@@ -74,12 +70,17 @@
             <div class="chart-box"><div style="font-size:0.8rem; color:var(--dim); margin-bottom:12px">// ALLOCATION</div><canvas id="pieChart"></canvas></div>
             <div class="chart-box"><div style="font-size:0.8rem; color:var(--dim); margin-bottom:12px">// GROWTH_DYNAMIC</div><canvas id="growthChart"></canvas></div>
         </div>
+        
+        <div class="section-label">// CASH_ASSETS</div>
+        <div id="cash-list"></div>
+        
+        <div class="section-label" style="margin-top:30px">// EQUITY_HOLDINGS</div>
         <div class="list-header"><div>Asset</div><div>Shares</div><div>Avg Cost</div><div>Price</div><div>Value</div><div>P/L (USD/%)</div><div>Target</div></div>
         <div id="stock-list"></div>
     </div>
 
     <div id="tab-watch" class="tab-content">
-        <div style="font-size: 0.9rem; color: var(--up); font-family: 'JetBrains Mono'; margin-bottom: 25px;">// SORTED_BY_ENTRY_PROXIMITY...</div>
+        <div style="font-size: 0.9rem; color: var(--up); font-family: 'JetBrains Mono'; margin-bottom: 25px;">// WATCHLIST_MONITOR</div>
         <div id="watch-grid" class="watch-grid"></div>
     </div>
 
@@ -116,47 +117,45 @@
     }
 
     function renderPort(rows, hRows) {
-        const container = document.getElementById('stock-list'); container.innerHTML = '';
+        const stockList = document.getElementById('stock-list'); stockList.innerHTML = '';
+        const cashList = document.getElementById('cash-list'); cashList.innerHTML = '';
         let tMkt = 0, tCost = 0, tTarget = 0, tickers = [], values = [];
 
-        // CASH-FIRST SORTING: บังคับ Cash อยู่บนสุด ที่เหลือตามมูลค่า
-        const sortedRows = rows.map(r => r.map(c => c.trim())).filter(r => clean(r[5]) > 0 || r[0] === 'Cash')
-            .sort((a, b) => {
-                if (a[0] === 'Cash') return -1;
-                if (b[0] === 'Cash') return 1;
-                return (clean(b[2])*clean(b[5])) - (clean(a[2])*clean(a[5]));
-            });
+        // 1. แยก Cash และจัดลำดับ Equity ตาม Value มากไปน้อย
+        const cashData = rows.filter(r => r[0].trim() === 'Cash');
+        const equityData = rows.filter(r => r[0].trim() !== 'Cash' && clean(r[5]) > 0)
+                               .sort((a, b) => (clean(b[2])*clean(b[5])) - (clean(a[2])*clean(a[5])));
 
-        sortedRows.forEach(cols => {
-            const ticker = cols[0], price = clean(cols[2]), cost = clean(cols[4]), shares = clean(cols[5]), target = clean(cols[7]);
+        // Render Cash
+        cashData.forEach(cols => {
+            const val = clean(cols[5]); tMkt += val;
+            cashList.innerHTML = `<div class="stock-row" style="grid-template-columns: 1fr 1fr 1.2fr"><b class="up" style="font-size:1.2rem; font-family:'JetBrains Mono'">CASH_BALANCE</b><b style="font-family:'JetBrains Mono'; font-size:1.2rem">$${val.toLocaleString()}</b><i style="color:var(--dim)">฿${(val*LIVE_FX).toLocaleString()}</i></div>`;
+        });
+
+        // Render Equity
+        equityData.forEach(cols => {
+            const ticker = cols[0].trim(), price = clean(cols[2]), cost = clean(cols[4]), shares = clean(cols[5]), target = clean(cols[7]);
             const mktVal = price * shares, costBasis = cost * shares, plUsd = mktVal - costBasis, plPct = costBasis > 0 ? (plUsd/costBasis)*100 : 0;
             const progress = target > 0 ? Math.min((price/target)*100, 100) : 0;
             
             tMkt += mktVal; tCost += costBasis; tTarget += (target * shares);
-            if (ticker !== 'Cash') { tickers.push(ticker); values.push(mktVal); }
+            tickers.push(ticker); values.push(mktVal);
 
-            container.innerHTML += `
-            <div class="stock-row">
-                <div style="font-family:'JetBrains Mono'"><b class="up" style="font-size:1.4rem">${ticker}</b><br><i style="font-size:0.8rem;color:var(--dim)">${cols[1]}</i></div>
-                <div style="font-family:'JetBrains Mono'"><b class="val-big">${shares}</b><br><i style="font-size:0.8rem;color:var(--dim)">shares</i></div>
-                <div class="val-big">$${cost.toFixed(2)}</div>
-                <div class="val-big">$${price.toFixed(2)}</div>
-                <div class="val-big" style="color:#fff">$${mktVal.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
-                <div>
-                    <b class="${plUsd>=0?'up':'down'}" style="font-size:1.2rem">${plUsd>=0?'+':''}$${Math.abs(plUsd).toLocaleString(undefined,{maximumFractionDigits:0})}</b><br>
-                    <i class="${plUsd>=0?'up':'down'}" style="font-size:0.9rem">${plPct.toFixed(1)}%</i>
-                </div>
-                <div>
-                    <div style="display:flex;justify-content:space-between;font-size:0.7rem;margin-bottom:5px"><span>TGT $${target}</span><span>${progress.toFixed(0)}%</span></div>
-                    <div class="bar-bg"><div class="bar-fill" style="width:${progress}%"></div></div>
-                </div>
+            stockList.innerHTML += `<div class="stock-row">
+                <div style="font-family:'JetBrains Mono'"><b class="up">${ticker}</b><br><i style="font-size:0.7rem;color:var(--dim)">${cols[1]}</i></div>
+                <div style="font-family:'JetBrains Mono'"><b>${shares}</b></div>
+                <div>$${cost.toFixed(2)}</div>
+                <div>$${price.toFixed(2)}</div>
+                <div class="white">$${mktVal.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
+                <div><b class="${plUsd>=0?'up':'down'}">$${Math.abs(plUsd).toLocaleString(undefined,{maximumFractionDigits:0})} (${plPct.toFixed(1)}%)</b></div>
+                <div><div style="display:flex;justify-content:space-between;font-size:0.6rem;color:var(--dim)"><span>TGT $${target}</span><span>${progress.toFixed(0)}%</span></div><div class="bar-bg"><div class="bar-fill" style="width:${progress}%"></div></div></div>
             </div>`;
         });
 
         document.getElementById('total-usd').innerText = `$${tMkt.toLocaleString(undefined,{maximumFractionDigits:0})}`;
         document.getElementById('total-thb').innerText = `฿${(tMkt*LIVE_FX).toLocaleString(undefined,{maximumFractionDigits:0})}`;
         const totalPlPct = tCost > 0 ? ((tMkt-tCost)/tCost)*100 : 0;
-        document.getElementById('total-pl').innerText = `${totalPlPct>=0?'+':''}${totalPlPct.toFixed(2)}%`;
+        document.getElementById('total-pl').innerText = `${totalPlPct.toFixed(2)}%`;
         document.getElementById('total-pl').className = totalPlPct >= 0 ? 'up' : 'down';
         document.getElementById('fx-rate').innerText = LIVE_FX.toFixed(2);
         drawCharts(tMkt, tTarget, tickers, values, hRows);
@@ -173,23 +172,23 @@
             const { cols, gap } = item;
             const ticker = cols[0], exchange = cols[1], price = clean(cols[4]), target = clean(cols[5]);
             let cardClass = 'watch-card';
-            let badgeText = `GAP: ${gap.toFixed(1)}%`;
-
-            if (gap <= 0) { cardClass += ' alert-pulse'; badgeText = 'READY FOR ENTRY'; }
-            else if (gap <= 5) { cardClass += ' alert-pulse'; badgeText = `NEARBY: ${gap.toFixed(1)}%`; }
+            if (gap <= 5) cardClass += ' alert-pulse';
 
             grid.innerHTML += `
-            <div class="${cardClass}">
-                <div class="ticker">${ticker} <span style="font-size:0.8rem;color:var(--dim)">${exchange}</span></div>
-                <div style="font-size:0.9rem;color:var(--dim);margin:15px 0;height:40px;overflow:hidden;">${cols[3]}</div>
-                <div style="display:flex;justify-content:space-between;border-top:1px solid #222;padding-top:15px">
-                    <div><span style="font-size:0.8rem;color:var(--dim)">Current</span><br><b class="val-big">$${price.toFixed(2)}</b></div>
-                    <div style="text-align:right"><span style="font-size:0.8rem;color:var(--dim)">Target</span><br><b class="up" style="font-size:1.2rem">$${target.toFixed(2)}</b></div>
-                </div>
-                <div class="gap-badge ${gap<=5?'up':'warn'}" style="margin-top:15px;font-family:'JetBrains Mono';font-size:0.9rem">${badgeText}</div>
-                <div style="font-size:0.8rem;color:var(--dim);margin-top:15px;border-top:1px dashed #222;padding-top:15px">${cols[6]||'-'}</div>
-                <a href="https://www.tradingview.com/chart/?symbol=${exchange}:${ticker}" target="_blank" class="tv-btn">VIEW_CHART</a>
-            </div>`;
+                <div class="${cardClass}">
+                    <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:10px">
+                        <b style="font-family:'JetBrains Mono'; font-size:1.4rem; color:var(--up)">${ticker} $${price.toFixed(2)}</b>
+                        <span style="font-size:0.7rem; color:var(--dim)">${exchange}</span>
+                    </div>
+                    <div style="font-size:0.8rem; color:var(--dim); height:35px; overflow:hidden; margin-bottom:15px">${cols[3]}</div>
+                    <div style="display:flex; justify-content:space-between; border-top:1px solid #222; padding-top:15px">
+                        <div><span style="font-size:0.7rem; color:var(--dim)">GAP_%</span><br><b class="${gap<=5?'up':'warn'}" style="font-family:'JetBrains Mono'; font-size:1.1rem">${gap.toFixed(1)}%</b></div>
+                        <div style="text-align:right"><span style="font-size:0.7rem; color:var(--dim)">TARGET</span><br><b class="up" style="font-family:'JetBrains Mono'; font-size:1.1rem">$${target.toFixed(2)}</b></div>
+                    </div>
+                    <div class="bar-bg"><div class="bar-fill" style="width:${Math.min((price/target)*100, 100)}%"></div></div>
+                    <div style="font-size:0.7rem; color:var(--dim); margin-top:12px">${cols[6]||'-'}</div>
+                    <a href="https://www.tradingview.com/chart/?symbol=${exchange}:${ticker}" target="_blank" class="tv-btn">VIEW_CHART</a>
+                </div>`;
         });
     }
 
@@ -201,16 +200,16 @@
             type: 'line',
             data: { labels, datasets: [
                 { data: Array(labels.length).fill(target), borderColor: '#00ff88', borderDash: [5,5], pointRadius: 0, fill: false },
-                { data, borderColor: '#00ff88', backgroundColor: 'rgba(0,255,136,0.1)', fill: true, pointRadius: 6, tension: 0.3 }
+                { data, borderColor: '#00ff88', backgroundColor: 'rgba(0,255,136,0.1)', fill: true, pointRadius: 5, tension: 0.3 }
             ]},
-            options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: '#222' }, ticks: { color: '#aaa', font: {size: 11} } }, x: { ticks: { color: '#666', font: { size: 10 } } } } }
+            options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: '#222' }, ticks: { color: '#aaa', font: {size: 10} } }, x: { ticks: { color: '#666', font: { size: 9 } } } } }
         });
         if (myPChart) myPChart.destroy();
         myPChart = new Chart(document.getElementById('pieChart'), {
             type: 'doughnut',
             data: { labels: tickers.map((t, i) => `${t} (${((values[i]/values.reduce((a,b)=>a+b,0))*100).toFixed(1)}%)`),
             datasets: [{ data: values, backgroundColor: ['#FFADAD', '#FFD6A5', '#FDFFB6', '#CAFFBF', '#9BF6FF', '#A0C4FF', '#BDB2FF', '#FFC6FF'], borderWidth: 0 }]},
-            options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#aaa', font: { size: 12 } } } }, cutout: '75%' }
+            options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#aaa', font: { size: 10 } } } }, cutout: '70%' }
         });
     }
     update(); setInterval(update, 60000);
