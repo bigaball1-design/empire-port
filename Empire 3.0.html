@@ -44,4 +44,187 @@
         .watch-card { background: var(--card); border: 1px solid var(--accent); padding: 20px; border-radius: 10px; transition: 0.3s; }
         .watch-card:hover { border-color: var(--dim); }
         .watch-card .ticker { font-family: 'JetBrains Mono'; font-size: 1.5rem; color: #fff; margin-bottom: 5px; }
-        .watch-card .price-row { display: flex; justify-content: space-between
+        .watch-card .price-row { display: flex; justify-content: space-between; margin: 15px 0; border-top: 1px solid #222; padding-top: 10px; }
+        .gap-badge { display: inline-block; padding: 4px 10px; border-radius: 4px; font-size: 0.8rem; font-weight: 700; margin-top: 5px; font-family: 'JetBrains Mono'; }
+        
+        .tv-btn { display: block; width: 100%; text-align: center; background: var(--tv-blue); color: #fff; text-decoration: none; padding: 10px 0; border-radius: 6px; margin-top: 15px; font-size: 0.75rem; font-weight: 600; font-family: 'JetBrains Mono'; }
+
+        /* Helpers */
+        .ticker-info b { font-family: 'JetBrains Mono'; font-size: 1.1rem; color: var(--up); display: block; }
+        .ticker-info i { font-size: 0.7rem; color: var(--dim); display: block; font-style: normal; }
+        .p-box b { display: block; font-size: 1rem; font-family: 'JetBrains Mono'; }
+        .p-box i { font-size: 0.75rem; color: var(--dim); font-style: normal; }
+        .bar-bg { height: 6px; background: #222; border-radius: 3px; margin-top: 8px; overflow: hidden; }
+        .bar-fill { height: 100%; background: var(--up); width: 0%; transition: 1.2s; }
+        .up { color: var(--up) !important; } .down { color: var(--down) !important; } .white { color: #ffffff !important; }
+
+        @media (max-width: 900px) { 
+            .charts-wrapper { grid-template-columns: 1fr; } 
+            .list-header { display: none; } 
+            .stock-row { grid-template-columns: 1.2fr 1fr; gap: 15px; } 
+            .chart-box { height: 320px; } 
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>EMPIRE_PORT_3.0</h1>
+        <div id="sync-info" style="font-size: 0.6rem; color: var(--dim);">SYSTEM_READY</div>
+    </header>
+
+    <nav>
+        <button class="nav-btn active" onclick="switchTab('port', this)">MAIN_PORT</button>
+        <button class="nav-btn" onclick="switchTab('watch', this)">ALPHA_WATCHLIST</button>
+    </nav>
+
+    <div id="tab-port" class="tab-content active">
+        <div class="summary-bar">
+            <div class="summary-item"><span>Net Worth (USD)</span><b id="total-usd">$0</b></div>
+            <div class="summary-item"><span>Net Worth (THB)</span><b id="total-thb">฿0</b></div>
+            <div class="summary-item"><span>Unrealized P/L</span><b id="total-pl">0.00%</b></div>
+            <div class="summary-item"><span>USD/THB</span><b id="fx-rate">0.00</b></div>
+        </div>
+
+        <div class="charts-wrapper">
+            <div class="chart-box"><div style="font-size:0.75rem; color:var(--dim); margin-bottom:10px">// ALLOCATION_WEIGHT</div><canvas id="pieChart"></canvas></div>
+            <div class="chart-box"><div style="font-size:0.75rem; color:var(--dim); margin-bottom:10px">// GROWTH_TRACKER</div><canvas id="growthChart"></canvas></div>
+        </div>
+
+        <div class="list-header"><div>Asset</div><div>Shares</div><div>Avg Cost</div><div>Price</div><div>Value</div><div>P/L</div><div>Target</div></div>
+        <div id="stock-list"></div>
+    </div>
+
+    <div id="tab-watch" class="tab-content">
+        <div style="font-size: 0.8rem; color: var(--up); font-family: 'JetBrains Mono'; margin-bottom: 20px;">// SCANNING_FOR_ALPHA_ENTRIES...</div>
+        <div id="watch-grid" class="watch-grid"></div>
+    </div>
+
+<script>
+    const PORT_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTQxEdO_NiXSTfy_96k0yL4rm-i9Ap3PwsIAzm4D3UlUVuntBqanNjChBCfB-ylKgWvYYI6kxIThfk-/pub?gid=1701656193&single=true&output=csv';
+    const WATCH_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTQxEdO_NiXSTfy_96k0yL4rm-i9Ap3PwsIAzm4D3UlUVuntBqanNjChBCfB-ylKgWvYYI6kxIThfk-/pub?gid=2092358580&single=true&output=csv';
+    
+    let LIVE_FX = 36.50, myGChart = null, myPChart = null;
+
+    function switchTab(id, btn) {
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById('tab-' + id).classList.add('active');
+        btn.classList.add('active');
+    }
+
+    function clean(v) { if(!v || v=="#N/A") return 0; return parseFloat(v.toString().replace(/[^0-9.-]+/g, "")) || 0; }
+
+    async function update() {
+        try {
+            const fx = await fetch('https://open.er-api.com/v6/latest/USD').then(r => r.json());
+            LIVE_FX = fx.rates.THB;
+            
+            // Fetch Both Sheets
+            const [pText, wText] = await Promise.all([
+                fetch(PORT_CSV).then(r => r.text()),
+                fetch(WATCH_CSV).then(r => r.text())
+            ]);
+
+            renderPort(pText.split('\n').slice(1).map(r => r.split(',')).filter(r => r[0] && clean(r[5]) > 0));
+            renderWatch(wText.split('\n').slice(1).map(r => r.split(',')).filter(r => r[0]));
+            
+            document.getElementById('sync-info').innerText = `LAST_SYNC: ${new Date().toLocaleTimeString()}`;
+        } catch (e) { document.getElementById('sync-info').innerText = "SYNC_ERROR"; }
+    }
+
+    function renderPort(rows) {
+        const container = document.getElementById('stock-list');
+        container.innerHTML = '';
+        let tMkt = 0, tCost = 0, tTarget = 0, tickers = [], values = [];
+
+        rows.forEach(cols => {
+            const ticker = cols[0].trim(), price = clean(cols[2]), cost = clean(cols[4]), shares = clean(cols[5]), target = clean(cols[7]);
+            const mktVal = price * shares, costBasis = cost * shares, plUsd = mktVal - costBasis;
+            const plPct = costBasis > 0 ? (plUsd / costBasis) * 100 : 0;
+            const progress = target > 0 ? Math.min((price / target) * 100, 100) : 0;
+            
+            tMkt += mktVal; tCost += costBasis; tTarget += (target * shares);
+            tickers.push(ticker); values.push(mktVal);
+
+            container.innerHTML += `<div class="stock-row">
+                <div class="ticker-info"><b>${ticker}</b><i>${cols[1]}</i></div>
+                <div class="p-box"><b>${shares.toLocaleString()}</b><i>shares</i></div>
+                <div class="p-box"><b>$${cost.toFixed(2)}</b></div>
+                <div class="p-box"><b>$${price.toFixed(2)}</b><i>฿${(price*LIVE_FX).toFixed(2)}</i></div>
+                <div class="p-box"><b class="white">$${mktVal.toLocaleString(undefined,{maximumFractionDigits:0})}</b><i>฿${(mktVal*LIVE_FX).toLocaleString(undefined,{maximumFractionDigits:0})}</i></div>
+                <div class="p-box"><b class="${plUsd>=0?'up':'down'}">${plUsd>=0?'+':'-'}$${Math.abs(plUsd).toLocaleString(undefined,{maximumFractionDigits:0})}</b><i class="${plUsd>=0?'up':'down'}">${plPct.toFixed(1)}%</i></div>
+                <div><div style="display:flex; justify-content:space-between; font-size:0.6rem; color:var(--dim)"><span>TGT $${target}</span><span>${progress.toFixed(0)}%</span></div><div class="bar-bg"><div class="bar-fill" style="width:${progress}%"></div></div></div>
+            </div>`;
+        });
+
+        document.getElementById('total-usd').innerText = `$${tMkt.toLocaleString(undefined,{maximumFractionDigits:0})}`;
+        document.getElementById('total-thb').innerText = `฿${(tMkt*LIVE_FX).toLocaleString(undefined,{maximumFractionDigits:0})}`;
+        const totalPlPct = tCost > 0 ? ((tMkt - tCost) / tCost) * 100 : 0;
+        document.getElementById('total-pl').innerText = `${totalPlPct>=0?'+':''}${totalPlPct.toFixed(2)}%`;
+        document.getElementById('total-pl').className = totalPlPct >= 0 ? 'up' : 'down';
+        document.getElementById('fx-rate').innerText = LIVE_FX.toFixed(2);
+        
+        drawCharts(tMkt, tTarget, tickers, values);
+    }
+
+    function renderWatch(rows) {
+        const grid = document.getElementById('watch-grid');
+        grid.innerHTML = '';
+
+        rows.forEach(cols => {
+            const ticker = cols[0].trim(), exchange = cols[1].trim();
+            const price = clean(cols[4]), target = clean(cols[5]), note = cols[6] || '-';
+            const gapPct = ((price - target) / target * 100).toFixed(1);
+            
+            let statusStyle = 'border: 1px solid var(--accent);';
+            let badgeClass = 'status-wait';
+            let badgeText = `GAP: ${gapPct}%`;
+
+            if (gapPct <= 0) {
+                statusStyle = 'border: 2px solid var(--up); background: rgba(0,255,136,0.05);';
+                badgeClass = 'up'; badgeText = '🔥 READY_FOR_ENTRY';
+            } else if (gapPct <= 5) {
+                badgeClass = 'down'; badgeText = `ALERT: ${gapPct}% NEARBY`;
+            }
+
+            grid.innerHTML += `
+                <div class="watch-card" style="${statusStyle}">
+                    <div class="ticker">${ticker} <span style="font-size:0.7rem; color:var(--dim)">${exchange}</span></div>
+                    <div style="font-size:0.8rem; color:var(--dim); height:35px; overflow:hidden;">${cols[3]}</div>
+                    <div class="price-row">
+                        <div class="p-box"><span>Current</span><b>$${price.toFixed(2)}</b></div>
+                        <div class="p-box" style="text-align:right"><span>Target</span><b class="up">$${target.toFixed(2)}</b></div>
+                    </div>
+                    <div class="gap-badge ${badgeClass}">${badgeText}</div>
+                    <div style="font-size:0.7rem; color:var(--dim); margin-top:15px; border-top:1px dashed #222; padding-top:10px;">${note}</div>
+                    <a href="https://www.tradingview.com/chart/?symbol=${exchange}:${ticker}" target="_blank" class="tv-btn">VIEW_TRADINGVIEW_CHART</a>
+                </div>`;
+        });
+    }
+
+    function drawCharts(current, target, tickers, values) {
+        if (myGChart) myGChart.destroy();
+        myGChart = new Chart(document.getElementById('growthChart'), {
+            type: 'line',
+            data: { labels: ['Now','','','','','','Target'],
+            datasets: [{ data: Array(7).fill(target), borderColor: '#00ff88', borderDash: [5,5], pointRadius: 0, fill: false },
+            { data: Array(7).fill(current), borderColor: '#444', backgroundColor: 'rgba(255,255,255,0.05)', fill: true, pointRadius: 0 }]},
+            options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: '#222' }, ticks: { color: '#aaa' }, suggestedMin: current*0.9 } } }
+        });
+
+        const total = values.reduce((a, b) => a + b, 0);
+        if (myPChart) myPChart.destroy();
+        myPChart = new Chart(document.getElementById('pieChart'), {
+            type: 'doughnut',
+            data: { labels: tickers.map((t, i) => `${t} (${((values[i]/total)*100).toFixed(1)}%)`),
+            datasets: [{ data: values, backgroundColor: ['#FFADAD', '#FFD6A5', '#FDFFB6', '#CAFFBF', '#9BF6FF', '#A0C4FF', '#BDB2FF', '#FFC6FF'], borderWidth: 0 }]},
+            options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#aaa', font: { size: 11 } } } }, cutout: '70%' }
+        });
+    }
+
+    update();
+    setInterval(update, 60000);
+</script>
+</body>
+</html>
