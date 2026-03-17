@@ -36,23 +36,25 @@
         .chart-box { background: var(--card); border: 1px solid var(--accent); padding: 25px; border-radius: 12px; height: 380px; }
         
         .section-label { font-family: 'JetBrains Mono'; font-size: 0.9rem; color: var(--up); margin: 20px 0 10px; opacity: 0.8; }
-        .list-header, .stock-row { display: grid; grid-template-columns: 1.5fr 0.8fr 0.8fr 1fr 1.2fr 1.5fr 1.2fr; gap: 15px; align-items: center; }
-        .list-header { padding: 0 20px 10px; color: var(--dim); font-size: 0.7rem; text-transform: uppercase; font-weight: 800; }
-        .stock-row { background: var(--card); border: 1px solid var(--accent); margin-bottom: 10px; padding: 18px 20px; border-radius: 8px; }
+        
+        /* Grid Layout: Separate P/L into USD and % */
+        .list-header, .stock-row { display: grid; grid-template-columns: 1.3fr 0.7fr 0.7fr 0.8fr 1.2fr 1.1fr 0.7fr 1.2fr; gap: 12px; align-items: center; }
+        .list-header { padding: 0 20px 10px; color: var(--dim); font-size: 0.65rem; text-transform: uppercase; font-weight: 800; }
+        .stock-row { background: var(--card); border: 1px solid var(--accent); margin-bottom: 10px; padding: 18px 20px; border-radius: 8px; font-size: 0.95rem; }
         
         .watch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
         .watch-card { background: var(--card); border: 1px solid var(--accent); padding: 25px; border-radius: 12px; transition: 0.3s; }
         .watch-card.alert-pulse { animation: pulse-border 2s infinite; }
         
         .tv-btn { display: block; width: 100%; text-align: center; background: var(--tv-blue); color: #fff; text-decoration: none; padding: 12px 0; border-radius: 8px; margin-top: 20px; font-size: 0.85rem; font-weight: 700; font-family: 'JetBrains Mono'; }
-        .up { color: var(--up) !important; } .down { color: var(--down) !important; }
+        .up { color: var(--up) !important; } .down { color: var(--down) !important; } .white { color: #ffffff !important; }
         .bar-bg { height: 6px; background: #222; border-radius: 3px; margin-top: 8px; overflow: hidden; }
         .bar-fill { height: 100%; background: var(--up); width: 0%; transition: 1.2s; }
     </style>
 </head>
 <body>
 
-    <header><h1>EMPIRE_PORT_3.0</h1><div id="sync-info" style="font-size: 0.7rem; color: var(--dim);">SYSTEM_ONLINE</div></header>
+    <header><h1>EMPIRE_PORT_3.0</h1><div id="sync-info" style="font-size: 0.7rem; color: var(--dim);">READY</div></header>
 
     <nav>
         <button class="nav-btn active" onclick="switchTab('port', this)">MAIN_PORTFOLIO</button>
@@ -67,15 +69,15 @@
             <div class="summary-item"><span>THB_RATE</span><b id="fx-rate" style="color:var(--dim)">0.00</b></div>
         </div>
         <div class="charts-wrapper">
-            <div class="chart-box"><div style="font-size:0.8rem; color:var(--dim); margin-bottom:12px">// ALLOCATION</div><canvas id="pieChart"></canvas></div>
-            <div class="chart-box"><div style="font-size:0.8rem; color:var(--dim); margin-bottom:12px">// GROWTH_DYNAMIC</div><canvas id="growthChart"></canvas></div>
+            <div class="chart-box"><div style="font-size:0.8rem; color:var(--dim); margin-bottom:12px">// TOTAL_ALLOCATION (INCL. CASH)</div><canvas id="pieChart"></canvas></div>
+            <div class="chart-box"><div style="font-size:0.8rem; color:var(--dim); margin-bottom:12px">// GROWTH_HISTORY</div><canvas id="growthChart"></canvas></div>
         </div>
         
         <div class="section-label">// CASH_ASSETS</div>
         <div id="cash-list"></div>
         
         <div class="section-label" style="margin-top:30px">// EQUITY_HOLDINGS</div>
-        <div class="list-header"><div>Asset</div><div>Shares</div><div>Avg Cost</div><div>Price</div><div>Value</div><div>P/L (USD/%)</div><div>Target</div></div>
+        <div class="list-header"><div>Asset</div><div>Shares</div><div>Avg Cost</div><div>Price</div><div>Value</div><div>P/L (USD)</div><div>P/L (%)</div><div>Target</div></div>
         <div id="stock-list"></div>
     </div>
 
@@ -112,8 +114,8 @@
             const hRows = hText.split('\n').slice(1).map(r => r.split(',')).filter(r => r[0]);
             renderPort(pText.split('\n').slice(1).map(r => r.split(',')).filter(r => r[0]), hRows);
             renderWatch(wText.split('\n').slice(1).map(r => r.split(',')).filter(r => r[0]));
-            document.getElementById('sync-info').innerText = `SYNC_OK: ${new Date().toLocaleTimeString()}`;
-        } catch (e) { document.getElementById('sync-info').innerText = "SYNC_ERROR"; }
+            document.getElementById('sync-info').innerText = `SYNC: ${new Date().toLocaleTimeString()}`;
+        } catch (e) { document.getElementById('sync-info').innerText = "ERROR"; }
     }
 
     function renderPort(rows, hRows) {
@@ -121,18 +123,18 @@
         const cashList = document.getElementById('cash-list'); cashList.innerHTML = '';
         let tMkt = 0, tCost = 0, tTarget = 0, tickers = [], values = [];
 
-        // 1. แยก Cash และจัดลำดับ Equity ตาม Value มากไปน้อย
         const cashData = rows.filter(r => r[0].trim() === 'Cash');
         const equityData = rows.filter(r => r[0].trim() !== 'Cash' && clean(r[5]) > 0)
                                .sort((a, b) => (clean(b[2])*clean(b[5])) - (clean(a[2])*clean(a[5])));
 
-        // Render Cash
+        // Cash Processing (Add to Charts)
         cashData.forEach(cols => {
             const val = clean(cols[5]); tMkt += val;
-            cashList.innerHTML = `<div class="stock-row" style="grid-template-columns: 1fr 1fr 1.2fr"><b class="up" style="font-size:1.2rem; font-family:'JetBrains Mono'">CASH_BALANCE</b><b style="font-family:'JetBrains Mono'; font-size:1.2rem">$${val.toLocaleString()}</b><i style="color:var(--dim)">฿${(val*LIVE_FX).toLocaleString()}</i></div>`;
+            tickers.push('CASH'); values.push(val);
+            cashList.innerHTML = `<div class="stock-row" style="grid-template-columns: 1fr 1fr 1.2fr"><b class="up" style="font-family:'JetBrains Mono'">CASH_BALANCE</b><b style="font-family:'JetBrains Mono'">$${val.toLocaleString()}</b><i style="color:var(--dim)">฿${(val*LIVE_FX).toLocaleString()}</i></div>`;
         });
 
-        // Render Equity
+        // Equity Processing
         equityData.forEach(cols => {
             const ticker = cols[0].trim(), price = clean(cols[2]), cost = clean(cols[4]), shares = clean(cols[5]), target = clean(cols[7]);
             const mktVal = price * shares, costBasis = cost * shares, plUsd = mktVal - costBasis, plPct = costBasis > 0 ? (plUsd/costBasis)*100 : 0;
@@ -143,11 +145,12 @@
 
             stockList.innerHTML += `<div class="stock-row">
                 <div style="font-family:'JetBrains Mono'"><b class="up">${ticker}</b><br><i style="font-size:0.7rem;color:var(--dim)">${cols[1]}</i></div>
-                <div style="font-family:'JetBrains Mono'"><b>${shares}</b></div>
+                <div><b>${shares}</b></div>
                 <div>$${cost.toFixed(2)}</div>
                 <div>$${price.toFixed(2)}</div>
                 <div class="white">$${mktVal.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
-                <div><b class="${plUsd>=0?'up':'down'}">$${Math.abs(plUsd).toLocaleString(undefined,{maximumFractionDigits:0})} (${plPct.toFixed(1)}%)</b></div>
+                <div class="${plUsd>=0?'up':'down'}"><b>$${Math.abs(plUsd).toLocaleString(undefined,{maximumFractionDigits:0})}</b></div>
+                <div class="${plUsd>=0?'up':'down'}"><b>${plPct.toFixed(1)}%</b></div>
                 <div><div style="display:flex;justify-content:space-between;font-size:0.6rem;color:var(--dim)"><span>TGT $${target}</span><span>${progress.toFixed(0)}%</span></div><div class="bar-bg"><div class="bar-fill" style="width:${progress}%"></div></div></div>
             </div>`;
         });
@@ -176,17 +179,16 @@
 
             grid.innerHTML += `
                 <div class="${cardClass}">
-                    <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:10px">
-                        <b style="font-family:'JetBrains Mono'; font-size:1.4rem; color:var(--up)">${ticker} $${price.toFixed(2)}</b>
-                        <span style="font-size:0.7rem; color:var(--dim)">${exchange}</span>
+                    <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:15px">
+                        <b class="white" style="font-family:'JetBrains Mono'; font-size:1.4rem;">${ticker} <span style="font-size:0.7rem; color:var(--dim)">${exchange}</span></b>
+                        <b class="white" style="font-family:'JetBrains Mono'; font-size:1.4rem;">$${price.toFixed(2)}</b>
                     </div>
-                    <div style="font-size:0.8rem; color:var(--dim); height:35px; overflow:hidden; margin-bottom:15px">${cols[3]}</div>
+                    <div style="font-size:0.8rem; color:var(--dim); height:35px; overflow:hidden; margin-bottom:20px">${cols[3]}</div>
                     <div style="display:flex; justify-content:space-between; border-top:1px solid #222; padding-top:15px">
                         <div><span style="font-size:0.7rem; color:var(--dim)">GAP_%</span><br><b class="${gap<=5?'up':'warn'}" style="font-family:'JetBrains Mono'; font-size:1.1rem">${gap.toFixed(1)}%</b></div>
                         <div style="text-align:right"><span style="font-size:0.7rem; color:var(--dim)">TARGET</span><br><b class="up" style="font-family:'JetBrains Mono'; font-size:1.1rem">$${target.toFixed(2)}</b></div>
                     </div>
-                    <div class="bar-bg"><div class="bar-fill" style="width:${Math.min((price/target)*100, 100)}%"></div></div>
-                    <div style="font-size:0.7rem; color:var(--dim); margin-top:12px">${cols[6]||'-'}</div>
+                    <div style="font-size:0.75rem; color:var(--dim); margin-top:15px">${cols[6]||'-'}</div>
                     <a href="https://www.tradingview.com/chart/?symbol=${exchange}:${ticker}" target="_blank" class="tv-btn">VIEW_CHART</a>
                 </div>`;
         });
@@ -195,6 +197,8 @@
     function drawCharts(current, target, tickers, values, hRows) {
         const labels = hRows.map(r => r[0]); labels.push('Now');
         const data = hRows.map(r => clean(r[1])); data.push(current);
+        
+        // Growth Chart
         if (myGChart) myGChart.destroy();
         myGChart = new Chart(document.getElementById('growthChart'), {
             type: 'line',
@@ -204,12 +208,25 @@
             ]},
             options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: '#222' }, ticks: { color: '#aaa', font: {size: 10} } }, x: { ticks: { color: '#666', font: { size: 9 } } } } }
         });
+
+        // Allocation Chart (With Cash & Big Labels)
         if (myPChart) myPChart.destroy();
         myPChart = new Chart(document.getElementById('pieChart'), {
             type: 'doughnut',
-            data: { labels: tickers.map((t, i) => `${t} (${((values[i]/values.reduce((a,b)=>a+b,0))*100).toFixed(1)}%)`),
-            datasets: [{ data: values, backgroundColor: ['#FFADAD', '#FFD6A5', '#FDFFB6', '#CAFFBF', '#9BF6FF', '#A0C4FF', '#BDB2FF', '#FFC6FF'], borderWidth: 0 }]},
-            options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#aaa', font: { size: 10 } } } }, cutout: '70%' }
+            data: { 
+                labels: tickers.map((t, i) => `${t} (${((values[i]/values.reduce((a,b)=>a+b,0))*100).toFixed(1)}%)`),
+                datasets: [{ data: values, backgroundColor: ['#00e676', '#FFADAD', '#FFD6A5', '#FDFFB6', '#CAFFBF', '#9BF6FF', '#A0C4FF', '#BDB2FF', '#FFC6FF'], borderWidth: 0 }]
+            },
+            options: { 
+                maintainAspectRatio: false, 
+                plugins: { 
+                    legend: { 
+                        position: 'right', 
+                        labels: { color: '#eee', font: { size: 14, weight: '600' }, boxWidth: 15, padding: 15 } 
+                    } 
+                }, 
+                cutout: '70%' 
+            }
         });
     }
     update(); setInterval(update, 60000);
