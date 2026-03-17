@@ -52,19 +52,19 @@
     <header><h1>EMPIRE_PORT_3.0</h1><div id="sync-info" style="font-size: 0.7rem; color: var(--dim);">SYSTEM_READY</div></header>
 
     <nav>
-        <button class="nav-btn active" onclick="switchTab('port', btnPort)">MAIN_PORTFOLIO</button>
-        <button class="nav-btn" onclick="switchTab('watch', btnWatch)">ALPHA_WATCHLIST</button>
+        <button class="nav-btn active" id="btnPort" onclick="switchTab('port', this)">MAIN_PORTFOLIO</button>
+        <button class="nav-btn" id="btnWatch" onclick="switchTab('watch', this)">ALPHA_WATCHLIST</button>
     </nav>
 
     <div id="tab-port" class="tab-content active">
         <div class="summary-bar">
             <div class="summary-item"><span>Net Worth (USD)</span><b id="total-usd" class="up">$0</b></div>
             <div class="summary-item"><span>Net Worth (THB)</span><b id="total-thb">฿0</b></div>
-            <div class="summary-item"><span>Total P/L</span><b id="total-pl">0.00%</b></div>
+            <div class="summary-item"><span>Portfolio P/L (%)</span><b id="total-pl">0.00%</b></div>
             <div class="summary-item"><span>THB_RATE</span><b id="fx-rate" style="color:var(--dim)">0.00</b></div>
         </div>
         <div class="charts-wrapper">
-            <div class="chart-box"><div style="font-size:0.8rem; color:var(--dim); margin-bottom:12px">// ALLOCATION (INCL. CASH)</div><canvas id="pieChart"></canvas></div>
+            <div class="chart-box"><div style="font-size:0.8rem; color:var(--dim); margin-bottom:12px">// TOTAL_ALLOCATION (INCL. CASH)</div><canvas id="pieChart"></canvas></div>
             <div class="chart-box"><div style="font-size:0.8rem; color:var(--dim); margin-bottom:12px">// GROWTH_HISTORY</div><canvas id="growthChart"></canvas></div>
         </div>
         
@@ -87,9 +87,7 @@
     const HIST_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTQxEdO_NiXSTfy_96k0yL4rm-i9Ap3PwsIAzm4D3UlUVuntBqanNjChBCfB-ylKgWvYYI6kxIThfk-/pub?gid=292797368&single=true&output=csv';
     
     let LIVE_FX = 32.38, myGChart = null, myPChart = null;
-    let lastValidPortPrices = {};
-    let lastValidWatchPrices = {};
-    let lastValidCash = 0;
+    let lastValidPortPrices = {}, lastValidWatchPrices = {}, lastValidCash = 0;
 
     function switchTab(id, btn) {
         document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
@@ -100,51 +98,44 @@
 
     function clean(v) { 
         if(!v || v=="#N/A" || v.trim() === "") return 0; 
-        let n = v.toString().replace(/[^0-9.-]+/g, "");
-        return parseFloat(n) || 0; 
+        return parseFloat(v.toString().replace(/[^0-9.-]+/g, "")) || 0; 
     }
 
     async function update() {
         try {
             document.getElementById('sync-info').innerText = "FETCHING...";
-            const cacheBuster = `&t=${new Date().getTime()}`; // บังคับ Google ส่งของใหม่
+            const cacheBuster = `&t=${new Date().getTime()}`;
 
-            // 1. ดึงอัตราแลกเปลี่ยน
+            // 1. ดึง FX
             const fx = await fetch('https://open.er-api.com/v6/latest/USD').then(r => r.json());
             LIVE_FX = fx.rates.THB;
 
-            // 2. ดึง Portfolio (ไฟล์ที่ 1)
+            // 2. โหลดพอร์ตก่อน
             const pText = await fetch(PORT_CSV + cacheBuster).then(r => r.text());
             const pRows = pText.split('\n').map(r => r.split(','));
             renderPort(pRows, []); 
 
-            // 3. หน่วงเวลา 800ms ก่อนดึงไฟล์ถัดไป (ป้องกัน Block)
-            await new Promise(r => setTimeout(r, 800));
-
-            // 4. ดึง Watchlist (ไฟล์ที่ 2)
+            // 3. หน่วงเวลา 1 วินาทีแล้วค่อยโหลด Watchlist (ลดการบล็อกของ Google)
+            await new Promise(r => setTimeout(r, 1000));
             const wText = await fetch(WATCH_CSV + cacheBuster).then(r => r.text());
             const wRows = wText.split('\n').map(r => r.split(','));
             renderWatch(wRows);
 
-            // 5. หน่วงเวลา 800ms
+            // 4. โหลดประวัติกราฟ
             await new Promise(r => setTimeout(r, 800));
-
-            // 6. ดึง History
             const hText = await fetch(HIST_CSV + cacheBuster).then(r => r.text());
             const hRows = hText.split('\n').slice(1).map(r => r.split(',')).filter(r => r[0]);
             renderPort(pRows, hRows);
 
             document.getElementById('sync-info').innerText = `SYNC: ${new Date().toLocaleTimeString()}`;
-        } catch (e) { 
-            document.getElementById('sync-info').innerText = "SYNC_ERROR";
-            console.error(e);
-        }
+        } catch (e) { document.getElementById('sync-info').innerText = "SYNC_ERROR"; }
     }
 
     function renderPort(rows, hRows) {
         const stockList = document.getElementById('stock-list'); stockList.innerHTML = '';
         const cashList = document.getElementById('cash-list'); cashList.innerHTML = '';
-        let tMkt = 0, tCost = 0, tTarget = 0, tickers = [], values = [];
+        let totalNetWorth = 0, totalEquityCost = 0, totalEquityValue = 0, totalTargetValue = 0;
+        let tickers = [], values = [];
 
         // Cash Shield
         let cashVal = clean(rows[0][12]);
@@ -152,7 +143,7 @@
         else if(cashVal > 0) lastValidCash = cashVal;
 
         if(cashVal > 0) {
-            tMkt += cashVal; tickers.push('CASH'); values.push(cashVal);
+            totalNetWorth += cashVal; tickers.push('CASH'); values.push(cashVal);
             cashList.innerHTML = `<div class="stock-row" style="grid-template-columns: 1fr 1fr 1.2fr"><b class="up" style="font-family:'JetBrains Mono'">CASH_BALANCE</b><b style="font-family:'JetBrains Mono'">$${cashVal.toLocaleString()}</b><i style="color:var(--dim)">฿${(cashVal*LIVE_FX).toLocaleString()}</i></div>`;
         }
 
@@ -171,7 +162,12 @@
             const { cols, ticker, price, cost, shares, target, mktVal } = item;
             const costBasis = cost * shares, plUsd = mktVal - costBasis, plPct = costBasis > 0 ? (plUsd/costBasis)*100 : 0;
             const progress = target > 0 ? Math.min((price/target)*100, 100) : 0;
-            tMkt += mktVal; tCost += costBasis; tTarget += (target * shares);
+            
+            totalNetWorth += mktVal; 
+            totalEquityValue += mktVal;
+            totalEquityCost += costBasis;
+            totalTargetValue += (target * shares);
+            
             tickers.push(ticker); values.push(mktVal);
 
             stockList.innerHTML += `<div class="stock-row">
@@ -186,13 +182,17 @@
             </div>`;
         });
 
-        document.getElementById('total-usd').innerText = `$${tMkt.toLocaleString(undefined,{maximumFractionDigits:0})}`;
-        document.getElementById('total-thb').innerText = `฿${(tMkt*LIVE_FX).toLocaleString(undefined,{maximumFractionDigits:0})}`;
-        const totalPlPct = tCost > 0 ? ((tMkt-tCost)/tCost)*100 : 0;
+        // SUMMARY CALCULATION
+        document.getElementById('total-usd').innerText = `$${totalNetWorth.toLocaleString(undefined,{maximumFractionDigits:0})}`;
+        document.getElementById('total-thb').innerText = `฿${(totalNetWorth*LIVE_FX).toLocaleString(undefined,{maximumFractionDigits:0})}`;
+        
+        // P/L %: คำนวณเฉพาะส่วนที่เป็นหุ้น (Exclude Cash)
+        const totalPlPct = totalEquityCost > 0 ? ((totalEquityValue - totalEquityCost) / totalEquityCost) * 100 : 0;
         document.getElementById('total-pl').innerText = `${totalPlPct.toFixed(2)}%`;
         document.getElementById('total-pl').className = totalPlPct >= 0 ? 'up' : 'down';
+        
         document.getElementById('fx-rate').innerText = LIVE_FX.toFixed(2);
-        drawCharts(tMkt, tTarget, tickers, values, hRows);
+        drawCharts(totalNetWorth, totalTargetValue, tickers, values, hRows);
     }
 
     function renderWatch(rows) {
@@ -246,10 +246,6 @@
             }, options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#eee', font: { size: 14, weight: '600' } } } }, cutout: '70%' }
         });
     }
-    
-    // ตั้งชื่อให้ปุ่มเพื่อให้ฟังก์ชันเรียกใช้ได้
-    const btnPort = document.querySelector('button[onclick*="port"]');
-    const btnWatch = document.querySelector('button[onclick*="watch"]');
     
     update(); setInterval(update, 60000);
 </script>
