@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Empire Port 3.0 Final Console</title>
+    <title>Empire Port 3.0 Final Console (Stable)</title>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
@@ -43,6 +43,7 @@
         .watch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
         .watch-card { background: var(--card); border: 1px solid var(--accent); padding: 25px; border-radius: 12px; transition: 0.3s; }
         .watch-card.alert-pulse { animation: pulse-border 2s infinite; }
+        
         .tv-btn { display: block; width: 100%; text-align: center; background: var(--tv-blue); color: #fff; text-decoration: none; padding: 12px 0; border-radius: 8px; margin-top: 20px; font-size: 0.85rem; font-weight: 700; font-family: 'JetBrains Mono'; }
         .up { color: var(--up) !important; } .down { color: var(--down) !important; } .white { color: #ffffff !important; }
     </style>
@@ -64,7 +65,7 @@
             <div class="summary-item"><span>THB_RATE</span><b id="fx-rate" style="color:var(--dim)">0.00</b></div>
         </div>
         <div class="charts-wrapper">
-            <div class="chart-box"><div style="font-size:0.8rem; color:var(--dim); margin-bottom:12px">// ALLOCATION (INCL. CASH)</div><canvas id="pieChart"></canvas></div>
+            <div class="chart-box"><div style="font-size:0.8rem; color:var(--dim); margin-bottom:12px">// TOTAL_ALLOCATION (INCL. CASH)</div><canvas id="pieChart"></canvas></div>
             <div class="chart-box"><div style="font-size:0.8rem; color:var(--dim); margin-bottom:12px">// GROWTH_HISTORY</div><canvas id="growthChart"></canvas></div>
         </div>
         
@@ -87,6 +88,10 @@
     const HIST_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTQxEdO_NiXSTfy_96k0yL4rm-i9Ap3PwsIAzm4D3UlUVuntBqanNjChBCfB-ylKgWvYYI6kxIThfk-/pub?gid=292797368&single=true&output=csv';
     
     let LIVE_FX = 32.38, myGChart = null, myPChart = null;
+    
+    // Ghost Data Shield Memory
+    let lastValidPortPrices = {};
+    let lastValidWatchPrices = {};
 
     function switchTab(id, btn) {
         document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
@@ -97,7 +102,6 @@
 
     function clean(v) { 
         if(!v || v=="#N/A" || v.trim() === "") return 0; 
-        // ล้างอักขระพิเศษเพื่อให้เหลือแค่ตัวเลข
         let n = v.toString().replace(/[^0-9.-]+/g, "");
         return parseFloat(n) || 0; 
     }
@@ -134,13 +138,35 @@
             cashList.innerHTML = `<div class="stock-row" style="grid-template-columns: 1fr 1fr 1.2fr"><b class="up" style="font-family:'JetBrains Mono'">CASH_BALANCE</b><b style="font-family:'JetBrains Mono'">$${cashVal.toLocaleString()}</b><i style="color:var(--dim)">฿${(cashVal*LIVE_FX).toLocaleString()}</i></div>`;
         }
 
-        // Equity: ข้ามแถว Header (Index 0)
-        const equityRows = rows.slice(1).filter(r => r[0] && r[0].trim() !== "" && clean(r[5]) > 0)
-                               .sort((a, b) => (clean(b[2])*clean(b[5])) - (clean(a[2])*clean(a[5])));
+        // Equity Processing (With Ghost Data Shield)
+        const equityRows = rows.slice(1).filter(r => r[0] && r[0].trim() !== "" && clean(r[5]) > 0);
+        
+        // 1. apply shield & calculate values first for sorting
+        let processedEquity = equityRows.map(cols => {
+            const ticker = cols[0].trim();
+            let price = clean(cols[2]); // ราคาใหม่
+            
+            // Shield Logic for Portfolio
+            if (price === 0 && lastValidPortPrices[ticker]) {
+                price = lastValidPortPrices[ticker]; // ใช้ค่าเดิม
+            } else if (price > 0) {
+                lastValidPortPrices[ticker] = price; // อัปเดตค่าล่าสุด
+            }
 
-        equityRows.forEach(cols => {
-            const ticker = cols[0].trim(), price = clean(cols[2]), cost = clean(cols[4]), shares = clean(cols[5]), target = clean(cols[7]);
-            const mktVal = price * shares, costBasis = cost * shares, plUsd = mktVal - costBasis, plPct = costBasis > 0 ? (plUsd/costBasis)*100 : 0;
+            const cost = clean(cols[4]);
+            const shares = clean(cols[5]);
+            const target = clean(cols[7]);
+            const mktVal = price * shares;
+            
+            return { cols, ticker, price, cost, shares, target, mktVal };
+        }).sort((a, b) => b.mktVal - a.mktVal); // Sort by Market Value
+
+        // 2. Render Sorted & Shielded Data
+        processedEquity.forEach(item => {
+            const { cols, ticker, price, cost, shares, target, mktVal } = item;
+            const costBasis = cost * shares;
+            const plUsd = mktVal - costBasis;
+            const plPct = costBasis > 0 ? (plUsd/costBasis)*100 : 0;
             const progress = target > 0 ? Math.min((price/target)*100, 100) : 0;
             
             tMkt += mktVal; tCost += costBasis; tTarget += (target * shares);
@@ -154,73 +180,4 @@
                 <div class="white">$${mktVal.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
                 <div class="${plUsd>=0?'up':'down'}"><b>$${Math.abs(plUsd).toLocaleString(undefined,{maximumFractionDigits:0})}</b></div>
                 <div class="${plUsd>=0?'up':'down'}"><b>${plPct.toFixed(1)}%</b></div>
-                <div><div style="display:flex;justify-content:space-between;font-size:0.6rem;color:var(--dim)"><span>TGT $${target}</span><span>${progress.toFixed(0)}%</span></div><div style="height:6px;background:#222;border-radius:3px;overflow:hidden;margin-top:8px"><div style="height:100%;background:var(--up);width:${progress}%"></div></div></div>
-            </div>`;
-        });
-
-        document.getElementById('total-usd').innerText = `$${tMkt.toLocaleString(undefined,{maximumFractionDigits:0})}`;
-        document.getElementById('total-thb').innerText = `฿${(tMkt*LIVE_FX).toLocaleString(undefined,{maximumFractionDigits:0})}`;
-        const totalPlPct = tCost > 0 ? ((tMkt-tCost)/tCost)*100 : 0;
-        document.getElementById('total-pl').innerText = `${totalPlPct.toFixed(2)}%`;
-        document.getElementById('total-pl').className = totalPlPct >= 0 ? 'up' : 'down';
-        document.getElementById('fx-rate').innerText = LIVE_FX.toFixed(2);
-        drawCharts(tMkt, tTarget, tickers, values, hRows);
-    }
-
-    function renderWatch(rows) {
-        const grid = document.getElementById('watch-grid'); grid.innerHTML = '';
-        // Watchlist: Price Index 4, Target Index 5
-        const sorted = rows.slice(1).filter(r => r[0] && r[0].trim() !== "").map(cols => {
-            const price = clean(cols[4]), target = clean(cols[5]);
-            return { cols, gap: ((price - target) / target * 100) };
-        }).sort((a, b) => a.gap - b.gap);
-
-        sorted.forEach(item => {
-            const { cols, gap } = item;
-            const ticker = cols[0], exchange = cols[1], price = clean(cols[4]), target = clean(cols[5]);
-            let cardClass = 'watch-card';
-            if (gap <= 5) cardClass += ' alert-pulse';
-
-            grid.innerHTML += `
-                <div class="${cardClass}">
-                    <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:15px">
-                        <b class="white" style="font-family:'JetBrains Mono'; font-size:1.4rem;">${ticker} <span style="font-size:0.7rem; color:var(--dim)">${exchange}</span></b>
-                        <b class="white" style="font-family:'JetBrains Mono'; font-size:1.4rem;">$${price.toFixed(2)}</b>
-                    </div>
-                    <div style="font-size:0.8rem; color:var(--dim); height:35px; overflow:hidden; margin-bottom:20px">${cols[3] || '-'}</div>
-                    <div style="display:flex; justify-content:space-between; border-top:1px solid #222; padding-top:15px">
-                        <div><span style="font-size:0.7rem; color:var(--dim)">GAP_%</span><br><b class="${gap<=5?'up':'warn'}" style="font-family:'JetBrains Mono'; font-size:1.1rem">${gap.toFixed(1)}%</b></div>
-                        <div style="text-align:right"><span style="font-size:0.7rem; color:var(--dim)">TARGET</span><br><b class="up" style="font-family:'JetBrains Mono'; font-size:1.1rem">$${target.toFixed(2)}</b></div>
-                    </div>
-                    <div style="font-size:0.75rem; color:var(--dim); margin-top:15px">${cols[6]||'-'}</div>
-                    <a href="https://www.tradingview.com/chart/?symbol=${exchange}:${ticker}" target="_blank" class="tv-btn">VIEW_CHART</a>
-                </div>`;
-        });
-    }
-
-    function drawCharts(current, target, tickers, values, hRows) {
-        const labels = hRows.map(r => r[0]); labels.push('Now');
-        const data = hRows.map(r => clean(r[1])); data.push(current);
-        if (myGChart) myGChart.destroy();
-        myGChart = new Chart(document.getElementById('growthChart'), {
-            type: 'line',
-            data: { labels, datasets: [
-                { data: Array(labels.length).fill(target), borderColor: '#00ff88', borderDash: [5,5], pointRadius: 0, fill: false },
-                { data, borderColor: '#00ff88', backgroundColor: 'rgba(0,255,136,0.1)', fill: true, pointRadius: 5, tension: 0.3 }
-            ]},
-            options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: '#222' }, ticks: { color: '#aaa', font: {size: 10} } }, x: { ticks: { color: '#666', font: { size: 9 } } } } }
-        });
-        if (myPChart) myPChart.destroy();
-        myPChart = new Chart(document.getElementById('pieChart'), {
-            type: 'doughnut',
-            data: { 
-                labels: tickers.map((t, i) => `${t} (${((values[i]/values.reduce((a,b)=>a+b,0))*100).toFixed(1)}%)`),
-                datasets: [{ data: values, backgroundColor: ['#00e676', '#FFADAD', '#FFD6A5', '#FDFFB6', '#CAFFBF', '#9BF6FF', '#A0C4FF', '#BDB2FF', '#FFC6FF'], borderWidth: 0 }]
-            },
-            options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#eee', font: { size: 14, weight: '600' } } } }, cutout: '70%' }
-        });
-    }
-    update(); setInterval(update, 60000);
-</script>
-</body>
-</html>
+                <div><div style="display:flex;justify-content:space-
