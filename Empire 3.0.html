@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Empire Port 3.0 Final Console (Stable)</title>
+    <title>Empire Port 3.0 Stable Console</title>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
@@ -43,7 +43,6 @@
         .watch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
         .watch-card { background: var(--card); border: 1px solid var(--accent); padding: 25px; border-radius: 12px; transition: 0.3s; }
         .watch-card.alert-pulse { animation: pulse-border 2s infinite; }
-        
         .tv-btn { display: block; width: 100%; text-align: center; background: var(--tv-blue); color: #fff; text-decoration: none; padding: 12px 0; border-radius: 8px; margin-top: 20px; font-size: 0.85rem; font-weight: 700; font-family: 'JetBrains Mono'; }
         .up { color: var(--up) !important; } .down { color: var(--down) !important; } .white { color: #ffffff !important; }
     </style>
@@ -53,8 +52,8 @@
     <header><h1>EMPIRE_PORT_3.0</h1><div id="sync-info" style="font-size: 0.7rem; color: var(--dim);">SYSTEM_READY</div></header>
 
     <nav>
-        <button class="nav-btn active" onclick="switchTab('port', this)">MAIN_PORTFOLIO</button>
-        <button class="nav-btn" onclick="switchTab('watch', this)">ALPHA_WATCHLIST</button>
+        <button class="nav-btn active" onclick="switchTab('port', btnPort)">MAIN_PORTFOLIO</button>
+        <button class="nav-btn" onclick="switchTab('watch', btnWatch)">ALPHA_WATCHLIST</button>
     </nav>
 
     <div id="tab-port" class="tab-content active">
@@ -65,7 +64,7 @@
             <div class="summary-item"><span>THB_RATE</span><b id="fx-rate" style="color:var(--dim)">0.00</b></div>
         </div>
         <div class="charts-wrapper">
-            <div class="chart-box"><div style="font-size:0.8rem; color:var(--dim); margin-bottom:12px">// TOTAL_ALLOCATION (INCL. CASH)</div><canvas id="pieChart"></canvas></div>
+            <div class="chart-box"><div style="font-size:0.8rem; color:var(--dim); margin-bottom:12px">// ALLOCATION (INCL. CASH)</div><canvas id="pieChart"></canvas></div>
             <div class="chart-box"><div style="font-size:0.8rem; color:var(--dim); margin-bottom:12px">// GROWTH_HISTORY</div><canvas id="growthChart"></canvas></div>
         </div>
         
@@ -88,16 +87,15 @@
     const HIST_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTQxEdO_NiXSTfy_96k0yL4rm-i9Ap3PwsIAzm4D3UlUVuntBqanNjChBCfB-ylKgWvYYI6kxIThfk-/pub?gid=292797368&single=true&output=csv';
     
     let LIVE_FX = 32.38, myGChart = null, myPChart = null;
-    
-    // Ghost Data Shield Memory
     let lastValidPortPrices = {};
     let lastValidWatchPrices = {};
+    let lastValidCash = 0;
 
     function switchTab(id, btn) {
         document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
         document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
         document.getElementById('tab-' + id).classList.add('active');
-        btn.classList.add('active');
+        if(btn) btn.classList.add('active');
     }
 
     function clean(v) { 
@@ -109,82 +107,70 @@
     async function update() {
         try {
             document.getElementById('sync-info').innerText = "FETCHING...";
-            
-            // 1. ดึงอัตราแลกเปลี่ยนก่อน
+            const cacheBuster = `&t=${new Date().getTime()}`; // บังคับ Google ส่งของใหม่
+
+            // 1. ดึงอัตราแลกเปลี่ยน
             const fx = await fetch('https://open.er-api.com/v6/latest/USD').then(r => r.json());
             LIVE_FX = fx.rates.THB;
-            
-            // 2. ดึงหน้าพอร์ต (ไฟล์ที่ 1)
-            const pText = await fetch(PORT_CSV).then(r => r.text());
+
+            // 2. ดึง Portfolio (ไฟล์ที่ 1)
+            const pText = await fetch(PORT_CSV + cacheBuster).then(r => r.text());
             const pRows = pText.split('\n').map(r => r.split(','));
-            renderPort(pRows, []); // เรนเดอร์พอร์ตก่อนเพื่อความเร็ว
-            
-            // 3. หน่วงเวลา 500ms ก่อนดึงไฟล์ถัดไป (ป้องกันเบราว์เซอร์บล็อก)
-            await new Promise(resolve => setTimeout(resolve, 500));
-            
-            // 4. ดึงหน้า Watchlist (ไฟล์ที่ 2)
-            const wText = await fetch(WATCH_CSV).then(r => r.text());
+            renderPort(pRows, []); 
+
+            // 3. หน่วงเวลา 800ms ก่อนดึงไฟล์ถัดไป (ป้องกัน Block)
+            await new Promise(r => setTimeout(r, 800));
+
+            // 4. ดึง Watchlist (ไฟล์ที่ 2)
+            const wText = await fetch(WATCH_CSV + cacheBuster).then(r => r.text());
             const wRows = wText.split('\n').map(r => r.split(','));
             renderWatch(wRows);
-            
-            // 5. หน่วงเวลาอีก 500ms ก่อนดึงไฟล์สุดท้าย
-            await new Promise(resolve => setTimeout(resolve, 500));
-            
-            // 6. ดึง History (ไฟล์ที่ 3) และเรนเดอร์กราฟ
-            const hText = await fetch(HIST_CSV).then(r => r.text());
+
+            // 5. หน่วงเวลา 800ms
+            await new Promise(r => setTimeout(r, 800));
+
+            // 6. ดึง History
+            const hText = await fetch(HIST_CSV + cacheBuster).then(r => r.text());
             const hRows = hText.split('\n').slice(1).map(r => r.split(',')).filter(r => r[0]);
-            renderPort(pRows, hRows); // เรนเดอร์ซ้ำพร้อมกราฟ
-            
+            renderPort(pRows, hRows);
+
             document.getElementById('sync-info').innerText = `SYNC: ${new Date().toLocaleTimeString()}`;
         } catch (e) { 
-            document.getElementById('sync-info').innerText = "SYNC_ERROR"; 
-            console.error("Update failed:", e); 
+            document.getElementById('sync-info').innerText = "SYNC_ERROR";
+            console.error(e);
         }
     }
+
     function renderPort(rows, hRows) {
         const stockList = document.getElementById('stock-list'); stockList.innerHTML = '';
         const cashList = document.getElementById('cash-list'); cashList.innerHTML = '';
         let tMkt = 0, tCost = 0, tTarget = 0, tickers = [], values = [];
 
-        // Cash อยู่คอลัมน์ M (Index 12) ของแถวแรกสุด (Header row)
-        const cashVal = clean(rows[0][12]);
+        // Cash Shield
+        let cashVal = clean(rows[0][12]);
+        if(cashVal === 0 && lastValidCash > 0) cashVal = lastValidCash;
+        else if(cashVal > 0) lastValidCash = cashVal;
+
         if(cashVal > 0) {
-            tMkt += cashVal;
-            tickers.push('CASH'); values.push(cashVal);
+            tMkt += cashVal; tickers.push('CASH'); values.push(cashVal);
             cashList.innerHTML = `<div class="stock-row" style="grid-template-columns: 1fr 1fr 1.2fr"><b class="up" style="font-family:'JetBrains Mono'">CASH_BALANCE</b><b style="font-family:'JetBrains Mono'">$${cashVal.toLocaleString()}</b><i style="color:var(--dim)">฿${(cashVal*LIVE_FX).toLocaleString()}</i></div>`;
         }
 
-        // Equity Processing (With Ghost Data Shield)
         const equityRows = rows.slice(1).filter(r => r[0] && r[0].trim() !== "" && clean(r[5]) > 0);
-        
-        // 1. apply shield & calculate values first for sorting
         let processedEquity = equityRows.map(cols => {
             const ticker = cols[0].trim();
-            let price = clean(cols[2]); // ราคาใหม่
-            
-            // Shield Logic for Portfolio
-            if (price === 0 && lastValidPortPrices[ticker]) {
-                price = lastValidPortPrices[ticker]; // ใช้ค่าเดิม
-            } else if (price > 0) {
-                lastValidPortPrices[ticker] = price; // อัปเดตค่าล่าสุด
-            }
+            let price = clean(cols[2]);
+            if (price === 0 && lastValidPortPrices[ticker]) price = lastValidPortPrices[ticker];
+            else if (price > 0) lastValidPortPrices[ticker] = price;
 
-            const cost = clean(cols[4]);
-            const shares = clean(cols[5]);
-            const target = clean(cols[7]);
-            const mktVal = price * shares;
-            
+            const cost = clean(cols[4]), shares = clean(cols[5]), target = clean(cols[7]), mktVal = price * shares;
             return { cols, ticker, price, cost, shares, target, mktVal };
-        }).sort((a, b) => b.mktVal - a.mktVal); // Sort by Market Value
+        }).sort((a, b) => b.mktVal - a.mktVal);
 
-        // 2. Render Sorted & Shielded Data
         processedEquity.forEach(item => {
             const { cols, ticker, price, cost, shares, target, mktVal } = item;
-            const costBasis = cost * shares;
-            const plUsd = mktVal - costBasis;
-            const plPct = costBasis > 0 ? (plUsd/costBasis)*100 : 0;
+            const costBasis = cost * shares, plUsd = mktVal - costBasis, plPct = costBasis > 0 ? (plUsd/costBasis)*100 : 0;
             const progress = target > 0 ? Math.min((price/target)*100, 100) : 0;
-            
             tMkt += mktVal; tCost += costBasis; tTarget += (target * shares);
             tickers.push(ticker); values.push(mktVal);
 
@@ -211,46 +197,34 @@
 
     function renderWatch(rows) {
         const grid = document.getElementById('watch-grid'); grid.innerHTML = '';
-        
-        // Watchlist Processing (With Ghost Data Shield)
         const watchRows = rows.slice(1).filter(r => r[0] && r[0].trim() !== "");
-        
         let processedWatch = watchRows.map(cols => {
             const ticker = cols[0].trim();
-            let price = clean(cols[4]); // ราคาใหม่
-            
-            // Shield Logic for Watchlist
-            if (price === 0 && lastValidWatchPrices[ticker]) {
-                price = lastValidWatchPrices[ticker]; // ใช้ค่าเดิม
-            } else if (price > 0) {
-                lastValidWatchPrices[ticker] = price; // อัปเดตค่าล่าสุด
-            }
-
-            const target = clean(cols[5]);
-            const gap = ((price - target) / target * 100);
+            let price = clean(cols[4]);
+            if (price === 0 && lastValidWatchPrices[ticker]) price = lastValidWatchPrices[ticker];
+            else if (price > 0) lastValidWatchPrices[ticker] = price;
+            const target = clean(cols[5]), gap = ((price - target) / target * 100);
             return { cols, ticker, price, target, gap };
-        }).sort((a, b) => a.gap - b.gap); // Sort by Gap Proximity
+        }).sort((a, b) => a.gap - b.gap);
 
         processedWatch.forEach(item => {
             const { cols, ticker, price, target, gap } = item;
             const exchange = cols[1];
             let cardClass = 'watch-card';
             if (gap <= 5) cardClass += ' alert-pulse';
-
-            grid.innerHTML += `
-                <div class="${cardClass}">
-                    <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:15px">
-                        <b class="white" style="font-family:'JetBrains Mono'; font-size:1.4rem;">${ticker} <span style="font-size:0.7rem; color:var(--dim)">${exchange}</span></b>
-                        <b class="white" style="font-family:'JetBrains Mono'; font-size:1.4rem;">$${price.toFixed(2)}</b>
-                    </div>
-                    <div style="font-size:0.8rem; color:var(--dim); height:35px; overflow:hidden; margin-bottom:20px">${cols[3] || '-'}</div>
-                    <div style="display:flex; justify-content:space-between; border-top:1px solid #222; padding-top:15px">
-                        <div><span style="font-size:0.7rem; color:var(--dim)">GAP_%</span><br><b class="${gap<=5?'up':'warn'}" style="font-family:'JetBrains Mono'; font-size:1.1rem">${gap.toFixed(1)}%</b></div>
-                        <div style="text-align:right"><span style="font-size:0.7rem; color:var(--dim)">TARGET</span><br><b class="up" style="font-family:'JetBrains Mono'; font-size:1.1rem">$${target.toFixed(2)}</b></div>
-                    </div>
-                    <div style="font-size:0.75rem; color:var(--dim); margin-top:15px">${cols[6]||'-'}</div>
-                    <a href="https://www.tradingview.com/chart/?symbol=${exchange}:${ticker}" target="_blank" class="tv-btn">VIEW_CHART</a>
-                </div>`;
+            grid.innerHTML += `<div class="${cardClass}">
+                <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:15px">
+                    <b class="white" style="font-family:'JetBrains Mono'; font-size:1.4rem;">${ticker} <span style="font-size:0.7rem; color:var(--dim)">${exchange}</span></b>
+                    <b class="white" style="font-family:'JetBrains Mono'; font-size:1.4rem;">$${price.toFixed(2)}</b>
+                </div>
+                <div style="font-size:0.8rem; color:var(--dim); height:35px; overflow:hidden; margin-bottom:20px">${cols[3] || '-'}</div>
+                <div style="display:flex; justify-content:space-between; border-top:1px solid #222; padding-top:15px">
+                    <div><span style="font-size:0.7rem; color:var(--dim)">GAP_%</span><br><b class="${gap<=5?'up':'warn'}" style="font-family:'JetBrains Mono'; font-size:1.1rem">${gap.toFixed(1)}%</b></div>
+                    <div style="text-align:right"><span style="font-size:0.7rem; color:var(--dim)">TARGET</span><br><b class="up" style="font-family:'JetBrains Mono'; font-size:1.1rem">$${target.toFixed(2)}</b></div>
+                </div>
+                <div style="font-size:0.75rem; color:var(--dim); margin-top:15px">${cols[6]||'-'}</div>
+                <a href="https://www.tradingview.com/chart/?symbol=${exchange}:${ticker}" target="_blank" class="tv-btn">VIEW_CHART</a>
+            </div>`;
         });
     }
 
@@ -259,23 +233,24 @@
         const data = hRows.map(r => clean(r[1])); data.push(current);
         if (myGChart) myGChart.destroy();
         myGChart = new Chart(document.getElementById('growthChart'), {
-            type: 'line',
-            data: { labels, datasets: [
+            type: 'line', data: { labels, datasets: [
                 { data: Array(labels.length).fill(target), borderColor: '#00ff88', borderDash: [5,5], pointRadius: 0, fill: false },
                 { data, borderColor: '#00ff88', backgroundColor: 'rgba(0,255,136,0.1)', fill: true, pointRadius: 5, tension: 0.3 }
-            ]},
-            options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: '#222' }, ticks: { color: '#aaa', font: {size: 10} } }, x: { ticks: { color: '#666', font: { size: 9 } } } } }
+            ]}, options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: '#222' }, ticks: { color: '#aaa', font: {size: 10} } }, x: { ticks: { color: '#666', font: { size: 9 } } } } }
         });
         if (myPChart) myPChart.destroy();
         myPChart = new Chart(document.getElementById('pieChart'), {
-            type: 'doughnut',
-            data: { 
+            type: 'doughnut', data: { 
                 labels: tickers.map((t, i) => `${t} (${((values[i]/values.reduce((a,b)=>a+b,0))*100).toFixed(1)}%)`),
                 datasets: [{ data: values, backgroundColor: ['#00e676', '#FFADAD', '#FFD6A5', '#FDFFB6', '#CAFFBF', '#9BF6FF', '#A0C4FF', '#BDB2FF', '#FFC6FF'], borderWidth: 0 }]
-            },
-            options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#eee', font: { size: 14, weight: '600' } } } }, cutout: '70%' }
+            }, options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#eee', font: { size: 14, weight: '600' } } } }, cutout: '70%' }
         });
     }
+    
+    // ตั้งชื่อให้ปุ่มเพื่อให้ฟังก์ชันเรียกใช้ได้
+    const btnPort = document.querySelector('button[onclick*="port"]');
+    const btnWatch = document.querySelector('button[onclick*="watch"]');
+    
     update(); setInterval(update, 60000);
 </script>
 </body>
