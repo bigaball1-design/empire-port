@@ -132,4 +132,99 @@
         // 1. ดึงค่า Cash จากคอลัมน์ M (Index 12) ของแถวที่ 2 (เพราะในรูป Cash อยู่บรรทัดบนสุดคู่กับตัวแรก)
         const firstRow = rows[0];
         const cashValue = clean(firstRow[12]); 
-        if(cashValue >
+        if(cashValue > 0) {
+            tMkt += cashValue;
+            tickers.push('CASH'); values.push(cashValue);
+            cashList.innerHTML = `<div class="stock-row" style="grid-template-columns: 1fr 1fr 1.2fr"><b class="up" style="font-family:'JetBrains Mono'">CASH_BALANCE</b><b style="font-family:'JetBrains Mono'">$${cashValue.toLocaleString()}</b><i style="color:var(--dim)">฿${(cashValue*LIVE_FX).toLocaleString()}</i></div>`;
+        }
+
+        // 2. จัดการหุ้น (Equity) และเรียงลำดับตาม Market Value (คอลัมน์ G / Index 6)
+        const equityData = rows.filter(r => r[0].trim() !== "" && r[0].trim() !== "Ticker" && clean(r[5]) > 0)
+                               .sort((a, b) => clean(b[6]) - clean(a[6]));
+
+        equityData.forEach(cols => {
+            const ticker = cols[0].trim(), price = clean(cols[2]), cost = clean(cols[4]), shares = clean(cols[5]), target = clean(cols[7]), mktVal = clean(cols[6]);
+            const costBasis = cost * shares, plUsd = mktVal - costBasis, plPct = costBasis > 0 ? (plUsd/costBasis)*100 : 0;
+            const progress = target > 0 ? Math.min((price/target)*100, 100) : 0;
+            
+            tMkt += mktVal; tCost += costBasis; tTarget += (target * shares);
+            tickers.push(ticker); values.push(mktVal);
+
+            stockList.innerHTML += `<div class="stock-row">
+                <div style="font-family:'JetBrains Mono'"><b class="up">${ticker}</b><br><i style="font-size:0.7rem;color:var(--dim)">${cols[1]}</i></div>
+                <div><b>${shares}</b></div>
+                <div>$${cost.toFixed(2)}</div>
+                <div>$${price.toFixed(2)}</div>
+                <div class="white">$${mktVal.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
+                <div class="${plUsd>=0?'up':'down'}"><b>$${Math.abs(plUsd).toLocaleString(undefined,{maximumFractionDigits:0})}</b></div>
+                <div class="${plUsd>=0?'up':'down'}"><b>${plPct.toFixed(1)}%</b></div>
+                <div><div style="display:flex;justify-content:space-between;font-size:0.6rem;color:var(--dim)"><span>TGT $${target}</span><span>${progress.toFixed(0)}%</span></div><div class="bar-bg"><div class="bar-fill" style="width:${progress}%"></div></div></div>
+            </div>`;
+        });
+
+        document.getElementById('total-usd').innerText = `$${tMkt.toLocaleString(undefined,{maximumFractionDigits:0})}`;
+        document.getElementById('total-thb').innerText = `฿${(tMkt*LIVE_FX).toLocaleString(undefined,{maximumFractionDigits:0})}`;
+        const totalPlPct = tCost > 0 ? ((tMkt-tCost)/tCost)*100 : 0;
+        document.getElementById('total-pl').innerText = `${totalPlPct.toFixed(2)}%`;
+        document.getElementById('total-pl').className = totalPlPct >= 0 ? 'up' : 'down';
+        document.getElementById('fx-rate').innerText = LIVE_FX.toFixed(2);
+        drawCharts(tMkt, tTarget, tickers, values, hRows);
+    }
+
+    function renderWatch(rows) {
+        const grid = document.getElementById('watch-grid'); grid.innerHTML = '';
+        // Watchlist: A=0(Ticker), B=1(Exch), D=3(Name), E=4(Price), F=5(Tgt)
+        const sorted = rows.filter(r => r[0]).map(cols => {
+            const price = clean(cols[4]), target = clean(cols[5]);
+            return { cols, gap: ((price - target) / target * 100) };
+        }).sort((a, b) => a.gap - b.gap);
+
+        sorted.forEach(item => {
+            const { cols, gap } = item;
+            const ticker = cols[0], exchange = cols[1], price = clean(cols[4]), target = clean(cols[5]);
+            let cardClass = 'watch-card';
+            if (gap <= 5) cardClass += ' alert-pulse';
+
+            grid.innerHTML += `
+                <div class="${cardClass}">
+                    <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:15px">
+                        <b class="white" style="font-family:'JetBrains Mono'; font-size:1.4rem;">${ticker} <span style="font-size:0.7rem; color:var(--dim)">${exchange}</span></b>
+                        <b class="white" style="font-family:'JetBrains Mono'; font-size:1.4rem;">$${price.toFixed(2)}</b>
+                    </div>
+                    <div style="font-size:0.8rem; color:var(--dim); height:35px; overflow:hidden; margin-bottom:20px">${cols[3] || ''}</div>
+                    <div style="display:flex; justify-content:space-between; border-top:1px solid #222; padding-top:15px">
+                        <div><span style="font-size:0.7rem; color:var(--dim)">GAP_%</span><br><b class="${gap<=5?'up':'warn'}" style="font-family:'JetBrains Mono'; font-size:1.1rem">${gap.toFixed(1)}%</b></div>
+                        <div style="text-align:right"><span style="font-size:0.7rem; color:var(--dim)">TARGET</span><br><b class="up" style="font-family:'JetBrains Mono'; font-size:1.1rem">$${target.toFixed(2)}</b></div>
+                    </div>
+                    <div style="font-size:0.75rem; color:var(--dim); margin-top:15px">${cols[6]||'-'}</div>
+                    <a href="https://www.tradingview.com/chart/?symbol=${exchange}:${ticker}" target="_blank" class="tv-btn">VIEW_CHART</a>
+                </div>`;
+        });
+    }
+
+    function drawCharts(current, target, tickers, values, hRows) {
+        const labels = hRows.map(r => r[0]); labels.push('Now');
+        const data = hRows.map(r => clean(r[1])); data.push(current);
+        if (myGChart) myGChart.destroy();
+        myGChart = new Chart(document.getElementById('growthChart'), {
+            type: 'line',
+            data: { labels, datasets: [
+                { data: Array(labels.length).fill(target), borderColor: '#00ff88', borderDash: [5,5], pointRadius: 0, fill: false },
+                { data, borderColor: '#00ff88', backgroundColor: 'rgba(0,255,136,0.1)', fill: true, pointRadius: 5, tension: 0.3 }
+            ]},
+            options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: '#222' }, ticks: { color: '#aaa', font: {size: 10} } }, x: { ticks: { color: '#666', font: { size: 9 } } } } }
+        });
+        if (myPChart) myPChart.destroy();
+        myPChart = new Chart(document.getElementById('pieChart'), {
+            type: 'doughnut',
+            data: { 
+                labels: tickers.map((t, i) => `${t} (${((values[i]/values.reduce((a,b)=>a+b,0))*100).toFixed(1)}%)`),
+                datasets: [{ data: values, backgroundColor: ['#00e676', '#FFADAD', '#FFD6A5', '#FDFFB6', '#CAFFBF', '#9BF6FF', '#A0C4FF', '#BDB2FF', '#FFC6FF'], borderWidth: 0 }]
+            },
+            options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#eee', font: { size: 14, weight: '600' } } } }, cutout: '70%' }
+        });
+    }
+    update(); setInterval(update, 60000);
+</script>
+</body>
+</html>
