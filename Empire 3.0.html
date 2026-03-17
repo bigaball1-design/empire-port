@@ -62,6 +62,7 @@
     const HIST_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTQxEdO_NiXSTfy_96k0yL4rm-i9Ap3PwsIAzm4D3UlUVuntBqanNjChBCfB-ylKgWvYYI6kxIThfk-/pub?gid=292797368&single=true&output=csv';
     
     let sysFX = 32.33, myGChart = null, myPChart = null;
+    let lastValidPortPrices = {}, lastValidWatchPrices = {}, lastValidCash = 0;
 
     function switchTab(id, btn) {
         document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
@@ -96,27 +97,26 @@
         const cashList = document.getElementById('cash-list'); cashList.innerHTML = '';
         
         // Locked Indexes (Portfolio)
-        const fxVal = clean(rows[1][10]); // USD/THB at K2
-        const cashVal = clean(rows[1][11]); // Cash at L2
+        const fxVal = clean(rows[1][10]); // K2
+        const cashVal = clean(rows[1][11]); // L2
         sysFX = fxVal || sysFX;
 
         let totalNW = cashVal, totalCost = 0, totalEqVal = 0, totalTgtVal = 0;
         let tickers = ['CASH'], values = [cashVal];
 
-        cashList.innerHTML = `<div class="stock-row" style="grid-template-columns: 1fr 1fr 1.2fr"><b class="up">// CASH_BALANCE (L2)</b><b>$${cashVal.toLocaleString(undefined, {minimumFractionDigits:2})}</b><i style="color:var(--dim)">฿${(cashVal*sysFX).toLocaleString()}</i></div>`;
+        cashList.innerHTML = `<div class="stock-row" style="grid-template-columns: 1fr 1fr 1.2fr"><b class="up">// CASH_BALANCE (L2)</b><b>$${cashVal.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</b><i style="color:var(--dim)">฿${(cashVal*sysFX).toLocaleString()}</i></div>`;
 
         rows.slice(1).forEach(r => {
             const t = r[0] ? r[0].trim() : "";
             const shares = clean(r[6]); // G
             if (!t || t === "Ticker (A)" || shares <= 0) return;
 
-            const p = clean(r[3]); // D (Price Buffer)
-            const c = clean(r[5]); // F (Avg Cost)
-            const tgt = clean(r[8]); // I (Target)
-            const mv = p * shares;
-            const cb = c * shares;
-            const plU = mv - cb;
-            const plP = cb > 0 ? (plU/cb)*100 : 0;
+            const p = clean(r[3]); // D
+            if (p === 0 && lastValidPortPrices[t]) p = lastValidPortPrices[t];
+            else if (p > 0) lastValidPortPrices[t] = p;
+
+            const c = clean(r[5]), tgt = clean(r[8]), mv = p * shares;
+            const cb = c * shares, plU = mv - cb, plP = cb > 0 ? (plU/cb)*100 : 0;
             const prog = tgt > 0 ? Math.min((p/tgt)*100, 100) : 0;
 
             totalNW += mv; totalEqVal += mv; totalCost += cb; totalTgtVal += (tgt * shares);
@@ -145,8 +145,8 @@
         const grid = document.getElementById('watch-grid'); grid.innerHTML = '';
         rows.slice(1).filter(r => r[0] && r[0].trim() !== "").map(r => {
             const t = r[0].trim();
-            const p = clean(r[4]); // E (Price X)
-            const tgt = clean(r[5]); // F (Target)
+            const p = clean(r[4]); // E
+            const tgt = clean(r[5]); // F
             const gap = ((p - tgt) / tgt * 100);
             return { r, t, p, tgt, gap };
         }).sort((a, b) => a.gap - b.gap).forEach(item => {
@@ -168,6 +168,7 @@
     }
 
     function drawCharts(curr, tgt, tickers, values, hRows) {
+        // Growth History
         if (myGChart) myGChart.destroy();
         myGChart = new Chart(document.getElementById('growthChart'), {
             type: 'line', data: { labels: hRows.map(r => r[0]).concat(['Now']), datasets: [
@@ -175,10 +176,18 @@
                 { label: 'Net Worth', data: hRows.map(r => clean(r[1])).concat([curr]), borderColor: '#00ff88', backgroundColor: 'rgba(0,255,136,0.1)', fill: true, pointRadius: 5 }
             ]}, options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: '#222' }, ticks: { color: '#aaa' } } } }
         });
+
+        // Allocation Pie (With Percentage Labels)
+        const totalAlloc = values.reduce((a, b) => a + b, 0);
+        const pieLabels = tickers.map((ticker, i) => {
+            const percentage = totalAlloc > 0 ? ((values[i] / totalAlloc) * 100).toFixed(1) : 0;
+            return `${ticker} (${percentage}%)`; // จูนกลับมาแล้ว: Ticker (Percent%)
+        });
+
         if (myPChart) myPChart.destroy();
         myPChart = new Chart(document.getElementById('pieChart'), {
-            type: 'doughnut', data: { labels: tickers, datasets: [{ data: values, backgroundColor: ['#00e676', '#FFADAD', '#FFD6A5', '#FDFFB6', '#CAFFBF', '#9BF6FF', '#A0C4FF', '#BDB2FF', '#FFC6FF'], borderWidth: 0 }]},
-            options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#eee', font: { size: 14 } } } }, cutout: '70%' }
+            type: 'doughnut', data: { labels: pieLabels, datasets: [{ data: values, backgroundColor: ['#00e676', '#FFADAD', '#FFD6A5', '#FDFFB6', '#CAFFBF', '#9BF6FF', '#A0C4FF', '#BDB2FF', '#FFC6FF'], borderWidth: 0 }]},
+            options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#eee', font: { size: 14, weight: '600' } } } }, cutout: '70%' }
         });
     }
     update(); setInterval(update, 60000);
