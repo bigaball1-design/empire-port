@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Empire Port 3.0 Stable Console</title>
+    <title>Empire Port 3.0 Precision Console</title>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;700&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
@@ -12,44 +12,31 @@
             --up: #00ff88; --down: #ff3344; --accent: #222; --warn: #ffab40; --tv-blue: #2962ff;
         }
         body { background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif; margin: 0; padding: 20px; }
-        
-        @keyframes pulse-border {
-            0% { border-color: var(--accent); box-shadow: 0 0 0px rgba(255,171,64,0); }
-            50% { border-color: var(--warn); box-shadow: 0 0 15px rgba(255,171,64,0.3); }
-            100% { border-color: var(--accent); box-shadow: 0 0 0px rgba(255,171,64,0); }
-        }
-
         nav { display: flex; gap: 15px; margin-bottom: 25px; border-bottom: 2px solid var(--accent); padding-bottom: 15px; }
         .nav-btn { background: none; border: 1px solid var(--accent); color: var(--dim); padding: 10px 20px; cursor: pointer; font-family: 'JetBrains Mono'; font-size: 0.9rem; border-radius: 4px; transition: 0.3s; }
         .nav-btn.active { border-color: var(--up); color: var(--up); background: rgba(0, 255, 136, 0.1); font-weight: 700; }
         .tab-content { display: none; }
         .tab-content.active { display: block; }
-
         header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
         h1 { font-family: 'JetBrains Mono'; font-size: 1.8rem; color: var(--up); margin: 0; letter-spacing: -1px; }
-        
         .summary-bar { background: var(--card); border: 1px solid var(--accent); padding: 25px; margin-bottom: 25px; display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 25px; border-radius: 12px; }
         .summary-item span { display: block; font-size: 0.8rem; color: var(--dim); margin-bottom: 8px; text-transform: uppercase; font-weight: 700; }
         .summary-item b { font-family: 'JetBrains Mono'; font-size: 1.8rem; letter-spacing: -1px; }
-        
         .charts-wrapper { display: grid; grid-template-columns: 1fr 1.5fr; gap: 25px; margin-bottom: 30px; }
         .chart-box { background: var(--card); border: 1px solid var(--accent); padding: 25px; border-radius: 12px; height: 380px; }
-        
         .section-label { font-family: 'JetBrains Mono'; font-size: 0.9rem; color: var(--up); margin: 20px 0 10px; opacity: 0.8; }
         .list-header, .stock-row { display: grid; grid-template-columns: 1.3fr 0.7fr 0.7fr 0.8fr 1.2fr 1.1fr 0.7fr 1.2fr; gap: 12px; align-items: center; }
         .list-header { padding: 0 20px 10px; color: var(--dim); font-size: 0.65rem; text-transform: uppercase; font-weight: 800; }
         .stock-row { background: var(--card); border: 1px solid var(--accent); margin-bottom: 10px; padding: 18px 20px; border-radius: 8px; font-size: 0.95rem; }
-        
         .watch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
         .watch-card { background: var(--card); border: 1px solid var(--accent); padding: 25px; border-radius: 12px; transition: 0.3s; }
-        .watch-card.alert-pulse { animation: pulse-border 2s infinite; }
         .tv-btn { display: block; width: 100%; text-align: center; background: var(--tv-blue); color: #fff; text-decoration: none; padding: 12px 0; border-radius: 8px; margin-top: 20px; font-size: 0.85rem; font-weight: 700; font-family: 'JetBrains Mono'; }
         .up { color: var(--up) !important; } .down { color: var(--down) !important; } .white { color: #ffffff !important; }
     </style>
 </head>
 <body>
 
-    <header><h1>EMPIRE_PORT_3.0</h1><div id="sync-info" style="font-size: 0.7rem; color: var(--dim);">SYSTEM_READY</div></header>
+    <header><h1>EMPIRE_PORT_3.0</h1><div id="sync-info" style="font-size: 0.7rem; color: var(--dim);">READY</div></header>
 
     <nav>
         <button class="nav-btn active" onclick="switchTab('port', this)">MAIN_PORTFOLIO</button>
@@ -64,20 +51,18 @@
             <div class="summary-item"><span>THB_RATE</span><b id="fx-rate" style="color:var(--dim)">0.00</b></div>
         </div>
         <div class="charts-wrapper">
-            <div class="chart-box"><div style="font-size:0.8rem; color:var(--dim); margin-bottom:12px">// TOTAL_ALLOCATION (INCL. CASH)</div><canvas id="pieChart"></canvas></div>
-            <div class="chart-box"><div style="font-size:0.8rem; color:var(--dim); margin-bottom:12px">// GROWTH_HISTORY</div><canvas id="growthChart"></canvas></div>
+            <div class="chart-box"><div style="font-size:0.8rem; color:var(--dim); margin-bottom:12px">// ALLOCATION</div><canvas id="pieChart"></canvas></div>
+            <div class="chart-box"><div style="font-size:0.8rem; color:var(--dim); margin-bottom:12px">// GROWTH</div><canvas id="growthChart"></canvas></div>
         </div>
-        
         <div class="section-label">// CASH_ASSETS</div>
         <div id="cash-list"></div>
-        
         <div class="section-label" style="margin-top:30px">// EQUITY_HOLDINGS</div>
-        <div class="list-header"><div>Asset</div><div>Shares</div><div>Avg Cost</div><div>Price (D)</div><div>Value</div><div>P/L (USD)</div><div>P/L (%)</div><div>Target</div></div>
+        <div class="list-header"><div>Asset</div><div>Shares</div><div>Avg Cost</div><div>Price</div><div>Value</div><div>P/L (USD)</div><div>P/L (%)</div><div>Target</div></div>
         <div id="stock-list"></div>
     </div>
 
     <div id="tab-watch" class="tab-content">
-        <div style="font-size: 0.9rem; color: var(--up); font-family: 'JetBrains Mono'; margin-bottom: 25px;">// WATCHLIST_MONITOR</div>
+        <div style="font-size: 0.9rem; color: var(--up); font-family: 'JetBrains Mono'; margin-bottom: 25px;">// WATCHLIST</div>
         <div id="watch-grid" class="watch-grid"></div>
     </div>
 
@@ -98,44 +83,38 @@
 
     function clean(v) { 
         if(!v || v=="#N/A" || v.trim() === "") return 0; 
-        let n = v.toString().replace(/[^0-9.-]+/g, "");
-        return parseFloat(n) || 0; 
+        return parseFloat(v.toString().replace(/[^0-9.-]+/g, "")) || 0; 
     }
 
     async function update() {
         try {
             document.getElementById('sync-info').innerText = "FETCHING...";
             const cacheBuster = `&t=${new Date().getTime()}`;
-
             const fx = await fetch('https://open.er-api.com/v6/latest/USD').then(r => r.json());
             LIVE_FX = fx.rates.THB;
-
             const pText = await fetch(PORT_CSV + cacheBuster).then(r => r.text());
             const pRows = pText.split('\n').map(r => r.split(','));
             renderPort(pRows, []); 
-
             await new Promise(r => setTimeout(r, 1000));
             const wText = await fetch(WATCH_CSV + cacheBuster).then(r => r.text());
             const wRows = wText.split('\n').map(r => r.split(','));
             renderWatch(wRows);
-
             await new Promise(r => setTimeout(r, 800));
             const hText = await fetch(HIST_CSV + cacheBuster).then(r => r.text());
             const hRows = hText.split('\n').slice(1).map(r => r.split(',')).filter(r => r[0]);
             renderPort(pRows, hRows);
-
             document.getElementById('sync-info').innerText = `SYNC: ${new Date().toLocaleTimeString()}`;
-        } catch (e) { document.getElementById('sync-info').innerText = "SYNC_ERROR"; }
+        } catch (e) { document.getElementById('sync-info').innerText = "ERROR"; }
     }
 
     function renderPort(rows, hRows) {
         const stockList = document.getElementById('stock-list'); stockList.innerHTML = '';
         const cashList = document.getElementById('cash-list'); cashList.innerHTML = '';
-        let totalNetWorth = 0, totalEquityCost = 0, totalEquityValue = 0, totalTargetValue = 0;
+        let totalNetWorth = 0, totalEquityCost = 0, totalEquityValue = 0;
         let tickers = [], values = [];
 
-        // Cash (Column M = Index 12)
-        let cashVal = clean(rows[0][12]);
+        // Cash: คอลัมน์ N = Index 13 (ปรับตามโครงสร้างใหม่)
+        let cashVal = clean(rows[0][13]);
         if(cashVal === 0 && lastValidCash > 0) cashVal = lastValidCash;
         else if(cashVal > 0) lastValidCash = cashVal;
 
@@ -144,53 +123,47 @@
             cashList.innerHTML = `<div class="stock-row" style="grid-template-columns: 1fr 1fr 1.2fr"><b class="up" style="font-family:'JetBrains Mono'">CASH_BALANCE</b><b style="font-family:'JetBrains Mono'">$${cashVal.toLocaleString()}</b><i style="color:var(--dim)">฿${(cashVal*LIVE_FX).toLocaleString()}</i></div>`;
         }
 
-        // Equity: Price (D) = Index 3, Avg Cost (F) = Index 5, Shares (G) = Index 6, Target (I) = Index 8
+        // Equity Index Mapping: Ticker=0, Price=3, AvgCost=5, Shares=6, MktVal=7, Target=8
         const equityRows = rows.slice(1).filter(r => r[0] && r[0].trim() !== "" && clean(r[6]) > 0);
         let processedEquity = equityRows.map(cols => {
             const ticker = cols[0].trim();
-            let price = clean(cols[3]); // ใช้ Price (D)
+            let price = clean(cols[3]); // คอลัมน์ D
             if (price === 0 && lastValidPortPrices[ticker]) price = lastValidPortPrices[ticker];
             else if (price > 0) lastValidPortPrices[ticker] = price;
 
-            const cost = clean(cols[5]), shares = clean(cols[6]), target = clean(cols[8]), mktVal = price * shares;
+            const cost = clean(cols[5]), shares = clean(cols[6]), target = clean(cols[8]), mktVal = clean(cols[7]);
             return { cols, ticker, price, cost, shares, target, mktVal };
         }).sort((a, b) => b.mktVal - a.mktVal);
 
         processedEquity.forEach(item => {
-            const { cols, ticker, price, cost, shares, target, mktVal } = item;
+            const { ticker, price, cost, shares, target, mktVal } = item;
             const costBasis = cost * shares, plUsd = mktVal - costBasis, plPct = costBasis > 0 ? (plUsd/costBasis)*100 : 0;
             const progress = target > 0 ? Math.min((price/target)*100, 100) : 0;
-            
-            totalNetWorth += mktVal; totalEquityValue += mktVal; totalEquityCost += costBasis; totalTargetValue += (target * shares);
+            totalNetWorth += mktVal; totalEquityValue += mktVal; totalEquityCost += costBasis;
             tickers.push(ticker); values.push(mktVal);
-
             stockList.innerHTML += `<div class="stock-row">
-                <div style="font-family:'JetBrains Mono'"><b class="up">${ticker}</b><br><i style="font-size:0.7rem;color:var(--dim)">${cols[1]}</i></div>
-                <div><b>${shares}</b></div>
-                <div>$${cost.toFixed(2)}</div>
-                <div>$${price.toFixed(2)}</div>
-                <div class="white">$${mktVal.toLocaleString(undefined,{maximumFractionDigits:0})}</div>
-                <div class="${plUsd>=0?'up':'down'}"><b>$${Math.abs(plUsd).toLocaleString(undefined,{maximumFractionDigits:0})}</b></div>
+                <div style="font-family:'JetBrains Mono'"><b class="up">${ticker}</b><br><i style="font-size:0.7rem;color:var(--dim)">${item.cols[1]}</i></div>
+                <div><b>${shares}</b></div><div>$${cost.toFixed(2)}</div><div>$${price.toFixed(2)}</div><div class="white">$${mktVal.toLocaleString()}</div>
+                <div class="${plUsd>=0?'up':'down'}"><b>$${Math.abs(plUsd).toLocaleString()}</b></div>
                 <div class="${plUsd>=0?'up':'down'}"><b>${plPct.toFixed(1)}%</b></div>
                 <div><div style="display:flex;justify-content:space-between;font-size:0.6rem;color:var(--dim)"><span>TGT $${target}</span><span>${progress.toFixed(0)}%</span></div><div style="height:6px;background:#222;border-radius:3px;overflow:hidden;margin-top:8px"><div style="height:100%;background:var(--up);width:${progress}%"></div></div></div>
             </div>`;
         });
-
         document.getElementById('total-usd').innerText = `$${totalNetWorth.toLocaleString(undefined,{maximumFractionDigits:0})}`;
         document.getElementById('total-thb').innerText = `฿${(totalNetWorth*LIVE_FX).toLocaleString(undefined,{maximumFractionDigits:0})}`;
         const totalPlPct = totalEquityCost > 0 ? ((totalEquityValue - totalEquityCost) / totalEquityCost) * 100 : 0;
         document.getElementById('total-pl').innerText = `${totalPlPct.toFixed(2)}%`;
         document.getElementById('total-pl').className = totalPlPct >= 0 ? 'up' : 'down';
         document.getElementById('fx-rate').innerText = LIVE_FX.toFixed(2);
-        drawCharts(totalNetWorth, totalTargetValue, tickers, values, hRows);
+        drawCharts(totalNetWorth, 0, tickers, values, hRows);
     }
 
     function renderWatch(rows) {
         const grid = document.getElementById('watch-grid'); grid.innerHTML = '';
-        // Price (X) = Index 5, Target = Index 6
+        // Watchlist Index Mapping: Ticker=0, Exch=1, Price=5, Target=6, Note=7
         const sorted = rows.slice(1).filter(r => r[0] && r[0].trim() !== "").map(cols => {
             const ticker = cols[0].trim();
-            let price = clean(cols[5]);
+            let price = clean(cols[5]); // คอลัมน์ F (Price X)
             if (price === 0 && lastValidWatchPrices[ticker]) price = lastValidWatchPrices[ticker];
             else if (price > 0) lastValidWatchPrices[ticker] = price;
             const target = clean(cols[6]), gap = ((price - target) / target * 100);
@@ -198,10 +171,8 @@
         }).sort((a, b) => a.gap - b.gap);
 
         sorted.forEach(item => {
-            const { cols, ticker, price, target, gap } = item;
-            let cardClass = 'watch-card';
-            if (gap <= 5) cardClass += ' alert-pulse';
-            grid.innerHTML += `<div class="${cardClass}">
+            const { ticker, price, target, gap, cols } = item;
+            grid.innerHTML += `<div class="watch-card">
                 <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:15px">
                     <b class="white" style="font-family:'JetBrains Mono'; font-size:1.4rem;">${ticker} <span style="font-size:0.7rem; color:var(--dim)">${cols[1]}</span></b>
                     <b class="white" style="font-family:'JetBrains Mono'; font-size:1.4rem;">$${price.toFixed(2)}</b>
@@ -218,21 +189,17 @@
     }
 
     function drawCharts(current, target, tickers, values, hRows) {
-        const labels = hRows.map(r => r[0]); labels.push('Now');
-        const data = hRows.map(r => clean(r[1])); data.push(current);
         if (myGChart) myGChart.destroy();
         myGChart = new Chart(document.getElementById('growthChart'), {
-            type: 'line', data: { labels, datasets: [
-                { data: Array(labels.length).fill(target), borderColor: '#00ff88', borderDash: [5,5], pointRadius: 0, fill: false },
-                { data, borderColor: '#00ff88', backgroundColor: 'rgba(0,255,136,0.1)', fill: true, pointRadius: 5, tension: 0.3 }
+            type: 'line', data: { labels: hRows.map(r => r[0]).concat(['Now']), datasets: [
+                { data: hRows.map(r => clean(r[1])).concat([current]), borderColor: '#00ff88', backgroundColor: 'rgba(0,255,136,0.1)', fill: true, pointRadius: 5, tension: 0.3 }
             ]}, options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: '#222' }, ticks: { color: '#aaa', font: {size: 10} } }, x: { ticks: { color: '#666', font: { size: 9 } } } } }
         });
         if (myPChart) myPChart.destroy();
         myPChart = new Chart(document.getElementById('pieChart'), {
-            type: 'doughnut', data: { 
-                labels: tickers.map((t, i) => `${t} (${((values[i]/values.reduce((a,b)=>a+b,0))*100).toFixed(1)}%)`),
-                datasets: [{ data: values, backgroundColor: ['#00e676', '#FFADAD', '#FFD6A5', '#FDFFB6', '#CAFFBF', '#9BF6FF', '#A0C4FF', '#BDB2FF', '#FFC6FF'], borderWidth: 0 }]
-            }, options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#eee', font: { size: 14, weight: '600' } } } }, cutout: '70%' }
+            type: 'doughnut', data: { labels: tickers.map((t, i) => `${t} (${((values[i]/values.reduce((a,b)=>a+b,0))*100).toFixed(1)}%)`),
+            datasets: [{ data: values, backgroundColor: ['#00e676', '#FFADAD', '#FFD6A5', '#FDFFB6', '#CAFFBF', '#9BF6FF', '#A0C4FF', '#BDB2FF', '#FFC6FF'], borderWidth: 0 }]},
+            options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#eee', font: { size: 14, weight: '600' } } } }, cutout: '70%' }
         });
     }
     update(); setInterval(update, 60000);
