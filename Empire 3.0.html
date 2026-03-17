@@ -108,23 +108,39 @@
 
     async function update() {
         try {
+            document.getElementById('sync-info').innerText = "FETCHING...";
+            
+            // 1. ดึงอัตราแลกเปลี่ยนก่อน
             const fx = await fetch('https://open.er-api.com/v6/latest/USD').then(r => r.json());
             LIVE_FX = fx.rates.THB;
-            const [pText, wText, hText] = await Promise.all([
-                fetch(PORT_CSV).then(r => r.text()),
-                fetch(WATCH_CSV).then(r => r.text()),
-                fetch(HIST_CSV).then(r => r.text())
-            ]);
+            
+            // 2. ดึงหน้าพอร์ต (ไฟล์ที่ 1)
+            const pText = await fetch(PORT_CSV).then(r => r.text());
             const pRows = pText.split('\n').map(r => r.split(','));
+            renderPort(pRows, []); // เรนเดอร์พอร์ตก่อนเพื่อความเร็ว
+            
+            // 3. หน่วงเวลา 500ms ก่อนดึงไฟล์ถัดไป (ป้องกันเบราว์เซอร์บล็อก)
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            // 4. ดึงหน้า Watchlist (ไฟล์ที่ 2)
+            const wText = await fetch(WATCH_CSV).then(r => r.text());
             const wRows = wText.split('\n').map(r => r.split(','));
-            const hRows = hText.split('\n').slice(1).map(r => r.split(',')).filter(r => r[0]);
-
-            renderPort(pRows, hRows);
             renderWatch(wRows);
+            
+            // 5. หน่วงเวลาอีก 500ms ก่อนดึงไฟล์สุดท้าย
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            // 6. ดึง History (ไฟล์ที่ 3) และเรนเดอร์กราฟ
+            const hText = await fetch(HIST_CSV).then(r => r.text());
+            const hRows = hText.split('\n').slice(1).map(r => r.split(',')).filter(r => r[0]);
+            renderPort(pRows, hRows); // เรนเดอร์ซ้ำพร้อมกราฟ
+            
             document.getElementById('sync-info').innerText = `SYNC: ${new Date().toLocaleTimeString()}`;
-        } catch (e) { document.getElementById('sync-info').innerText = "ERROR"; console.error(e); }
+        } catch (e) { 
+            document.getElementById('sync-info').innerText = "SYNC_ERROR"; 
+            console.error("Update failed:", e); 
+        }
     }
-
     function renderPort(rows, hRows) {
         const stockList = document.getElementById('stock-list'); stockList.innerHTML = '';
         const cashList = document.getElementById('cash-list'); cashList.innerHTML = '';
