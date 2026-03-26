@@ -20,9 +20,11 @@
         .summary-item b { font-family: 'JetBrains Mono'; font-size: 1.8rem; }
         .charts-wrapper { display: grid; grid-template-columns: 1fr 1.5fr; gap: 25px; margin-bottom: 30px; }
         .chart-box { background: var(--card); border: 1px solid var(--accent); padding: 25px; border-radius: 12px; height: 380px; }
-        .list-header, .stock-row { display: grid; grid-template-columns: 1.3fr 0.7fr 0.7fr 0.8fr 1.2fr 1.1fr 0.7fr 1.2fr; gap: 12px; align-items: center; }
+        .list-header, .stock-row, .edu-row { display: grid; gap: 12px; align-items: center; }
         .list-header { padding: 0 20px 10px; color: var(--dim); font-size: 0.65rem; text-transform: uppercase; font-weight: 800; }
-        .stock-row { background: var(--card); border: 1px solid var(--accent); margin-bottom: 10px; padding: 18px 20px; border-radius: 8px; font-size: 0.95rem; }
+        .stock-row, .edu-row { background: var(--card); border: 1px solid var(--accent); margin-bottom: 10px; padding: 18px 20px; border-radius: 8px; font-size: 0.95rem; }
+        .stock-row { grid-template-columns: 1.3fr 0.7fr 0.7fr 0.8fr 1.2fr 1.1fr 0.7fr 1.2fr; }
+        .edu-row { grid-template-columns: 1fr 0.8fr 0.8fr 1fr 2fr; }
         .watch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
         .watch-card { background: var(--card); border: 1px solid var(--accent); padding: 25px; border-radius: 12px; }
         .tv-btn { display: block; width: 100%; text-align: center; background: var(--tv-blue); color: white; text-decoration: none; padding: 12px 0; border-radius: 8px; margin-top: 20px; font-size: 0.85rem; font-weight: 700; }
@@ -34,6 +36,7 @@
     <nav>
         <button class="nav-btn active" onclick="switchTab('port', this)">MAIN_PORTFOLIO</button>
         <button class="nav-btn" onclick="switchTab('watch', this)">ALPHA_WATCHLIST</button>
+        <button class="nav-btn" onclick="switchTab('edu', this)">EDUCATION_FUND</button>
     </nav>
 
     <div id="tab-port" class="tab-content active">
@@ -56,13 +59,24 @@
         <div id="watch-grid" class="watch-grid"></div>
     </div>
 
+    <div id="tab-edu" class="tab-content">
+        <div class="summary-bar">
+            <div class="summary-item"><span>Total Deposit</span><b id="edu-deposit" class="up">฿0</b></div>
+            <div class="summary-item"><span>Total Withdraw</span><b id="edu-withdraw" class="down">฿0</b></div>
+            <div class="summary-item"><span>Current Balance</span><b id="edu-balance" class="white">฿0</b></div>
+        </div>
+        <div class="list-header" style="grid-template-columns: 1fr 0.8fr 0.8fr 1fr 2fr"><div>Date</div><div>In</div><div>Out</div><div>Balance</div><div>Note</div></div>
+        <div id="edu-list"></div>
+    </div>
+
 <script>
     const PORT_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTQxEdO_NiXSTfy_96k0yL4rm-i9Ap3PwsIAzm4D3UlUVuntBqanNjChBCfB-ylKgWvYYI6kxIThfk-/pub?gid=1701656193&single=true&output=csv';
     const WATCH_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTQxEdO_NiXSTfy_96k0yL4rm-i9Ap3PwsIAzm4D3UlUVuntBqanNjChBCfB-ylKgWvYYI6kxIThfk-/pub?gid=2092358580&single=true&output=csv';
     const HIST_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTQxEdO_NiXSTfy_96k0yL4rm-i9Ap3PwsIAzm4D3UlUVuntBqanNjChBCfB-ylKgWvYYI6kxIThfk-/pub?gid=292797368&single=true&output=csv';
-    
+    const EDU_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTQxEdO_NiXSTfy_96k0yL4rm-i9Ap3PwsIAzm4D3UlUVuntBqanNjChBCfB-ylKgWvYYI6kxIThfk-/pub?gid=2113584670&single=true&output=csv';
+
     let sysFX = 32.33, myGChart = null, myPChart = null;
-    let lastValidPortPrices = {}, lastValidWatchPrices = {}, lastValidCash = 0;
+    let lastValidPortPrices = {};
 
     function switchTab(id, btn) {
         document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
@@ -80,14 +94,17 @@
         try {
             document.getElementById('sync-info').innerText = "SYNCING...";
             const cb = `&t=${new Date().getTime()}`;
-            const [pRes, wRes, hRes] = await Promise.all([
+            const [pRes, wRes, hRes, eRes] = await Promise.all([
                 fetch(PORT_CSV + cb).then(r => r.text()),
                 fetch(WATCH_CSV + cb).then(r => r.text()),
-                fetch(HIST_CSV + cb).then(r => r.text())
+                fetch(HIST_CSV + cb).then(r => r.text()),
+                fetch(EDU_CSV + cb).then(r => r.text())
             ]);
 
             renderPort(pRes.split('\n').map(r => r.split(',')), hRes.split('\n').slice(1).map(r => r.split(',')).filter(r => r[0]));
             renderWatch(wRes.split('\n').map(r => r.split(',')));
+            renderEdu(eRes.split('\n').map(r => r.split(',')));
+            
             document.getElementById('sync-info').innerText = `READY: ${new Date().toLocaleTimeString()}`;
         } catch (e) { document.getElementById('sync-info').innerText = "OFFLINE"; }
     }
@@ -95,23 +112,20 @@
     function renderPort(rows, hRows) {
         const stockList = document.getElementById('stock-list'); stockList.innerHTML = '';
         const cashList = document.getElementById('cash-list'); cashList.innerHTML = '';
-        
-        // Locked Indexes (Portfolio)
-        const fxVal = clean(rows[1][10]); // K2
-        const cashVal = clean(rows[1][11]); // L2
+        const fxVal = clean(rows[1][10]); const cashVal = clean(rows[1][11]);
         sysFX = fxVal || sysFX;
 
         let totalNW = cashVal, totalCost = 0, totalEqVal = 0, totalTgtVal = 0;
         let tickers = ['CASH'], values = [cashVal];
 
-        cashList.innerHTML = `<div class="stock-row" style="grid-template-columns: 1fr 1fr 1.2fr"><b class="up">// CASH_BALANCE (L2)</b><b>$${cashVal.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</b><i style="color:var(--dim)">฿${(cashVal*sysFX).toLocaleString()}</i></div>`;
+        cashList.innerHTML = `<div class="stock-row" style="grid-template-columns: 1fr 1fr 1.2fr"><b class="up">// CASH_BALANCE (L2)</b><b>$${cashVal.toLocaleString(undefined, {minimumFractionDigits:2})}</b><i style="color:var(--dim)">฿${(cashVal*sysFX).toLocaleString()}</i></div>`;
 
         rows.slice(1).forEach(r => {
             const t = r[0] ? r[0].trim() : "";
-            const shares = clean(r[6]); // G
+            const shares = clean(r[6]);
             if (!t || t === "Ticker (A)" || shares <= 0) return;
 
-            const p = clean(r[3]); // D
+            let p = clean(r[3]);
             if (p === 0 && lastValidPortPrices[t]) p = lastValidPortPrices[t];
             else if (p > 0) lastValidPortPrices[t] = p;
 
@@ -125,8 +139,8 @@
             stockList.innerHTML += `<div class="stock-row">
                 <div><b class="up">${t}</b><br><i style="font-size:0.7rem;color:var(--dim)">${r[1]}</i></div>
                 <div><b>${shares}</b></div><div>$${c.toFixed(2)}</div><div>$${p.toFixed(2)}</div>
-                <div class="white">$${mv.toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</div>
-                <div class="${plU>=0?'up':'down'}"><b>$${Math.abs(plU).toLocaleString(undefined, {minimumFractionDigits:2, maximumFractionDigits:2})}</b></div>
+                <div class="white">$${mv.toLocaleString(undefined, {minimumFractionDigits:2})}</div>
+                <div class="${plU>=0?'up':'down'}"><b>$${Math.abs(plU).toLocaleString(undefined, {minimumFractionDigits:2})}</b></div>
                 <div class="${plU>=0?'up':'down'}"><b>${plP.toFixed(1)}%</b></div>
                 <div><div style="display:flex;justify-content:space-between;font-size:0.6rem"><span>TGT $${tgt}</span><span>${prog.toFixed(0)}%</span></div><div style="height:6px;background:#222;margin-top:8px"><div style="height:100%;background:var(--up);width:${prog}%"></div></div></div>
             </div>`;
@@ -144,9 +158,7 @@
     function renderWatch(rows) {
         const grid = document.getElementById('watch-grid'); grid.innerHTML = '';
         rows.slice(1).filter(r => r[0] && r[0].trim() !== "").map(r => {
-            const t = r[0].trim();
-            const p = clean(r[4]); // E
-            const tgt = clean(r[5]); // F
+            const t = r[0].trim(); const p = clean(r[4]); const tgt = clean(r[5]);
             const gap = ((p - tgt) / tgt * 100);
             return { r, t, p, tgt, gap };
         }).sort((a, b) => a.gap - b.gap).forEach(item => {
@@ -167,8 +179,30 @@
         });
     }
 
+    function renderEdu(rows) {
+        const list = document.getElementById('edu-list'); list.innerHTML = '';
+        let totalIn = 0, totalOut = 0, lastBal = 0;
+
+        rows.slice(1).forEach(r => {
+            const date = r[0]; if(!date) return;
+            const dep = clean(r[1]); const wit = clean(r[2]); const bal = clean(r[3]);
+            totalIn += dep; totalOut += wit; lastBal = bal;
+
+            list.innerHTML += `<div class="edu-row">
+                <div style="color:var(--dim)">${date}</div>
+                <div class="up">${dep > 0 ? '฿'+dep.toLocaleString() : '-'}</div>
+                <div class="down">${wit > 0 ? '฿'+wit.toLocaleString() : '-'}</div>
+                <div class="white"><b>฿${bal.toLocaleString()}</b></div>
+                <div style="color:var(--dim); font-size:0.8rem">${r[4] || '-'}</div>
+            </div>`;
+        });
+
+        document.getElementById('edu-deposit').innerText = `฿${totalIn.toLocaleString()}`;
+        document.getElementById('edu-withdraw').innerText = `฿${totalOut.toLocaleString()}`;
+        document.getElementById('edu-balance').innerText = `฿${lastBal.toLocaleString()}`;
+    }
+
     function drawCharts(curr, tgt, tickers, values, hRows) {
-        // Growth History
         if (myGChart) myGChart.destroy();
         myGChart = new Chart(document.getElementById('growthChart'), {
             type: 'line', data: { labels: hRows.map(r => r[0]).concat(['Now']), datasets: [
@@ -177,11 +211,10 @@
             ]}, options: { maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { grid: { color: '#222' }, ticks: { color: '#aaa' } } } }
         });
 
-        // Allocation Pie (With Percentage Labels)
         const totalAlloc = values.reduce((a, b) => a + b, 0);
         const pieLabels = tickers.map((ticker, i) => {
             const percentage = totalAlloc > 0 ? ((values[i] / totalAlloc) * 100).toFixed(1) : 0;
-            return `${ticker} (${percentage}%)`; // จูนกลับมาแล้ว: Ticker (Percent%)
+            return `${ticker} (${percentage}%)`;
         });
 
         if (myPChart) myPChart.destroy();
@@ -190,6 +223,7 @@
             options: { maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#eee', font: { size: 14, weight: '600' } } } }, cutout: '70%' }
         });
     }
+
     update(); setInterval(update, 60000);
 </script>
 </body>
